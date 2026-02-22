@@ -1,170 +1,178 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Grand Strategy Game</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>War Game</title>
 <style>
-  body { margin: 0; font-family: sans-serif; background: #1e1e2f; color: #fff; }
+  body { margin: 0; font-family: Arial, sans-serif; background: #001f3f; color: white; }
   #lobby, #game { display: none; }
-  #playerList { list-style: none; padding: 0; }
-  #map { width: 100vw; height: 80vh; background: #3a6ea5; display: block; }
-  .country { cursor: pointer; }
-  .statsBox { position: absolute; background: rgba(200,200,200,0.9); color: #000; padding: 5px; border-radius: 5px; display: none; }
-  #turnIndicator { background: #888; padding: 10px; text-align: center; margin-bottom: 5px; }
+  #top-bar { background: #ccc; color: black; padding: 10px; text-align: center; font-weight: bold; }
+  canvas { background: #0074D9; display: block; margin: 0 auto; }
+  .player-list { margin-top: 10px; }
+  .player { margin-bottom: 5px; }
+  #country-stats { position: absolute; background: rgba(0,0,0,0.7); color: white; padding: 5px; display: none; border-radius: 5px; font-size: 14px; }
+  button { margin: 5px; }
 </style>
 </head>
 <body>
-
 <div id="menu">
-  <h1>Grand Strategy Game</h1>
-  <input id="playerName" placeholder="Enter your name" />
-  <button id="createBtn">Create Lobby</button>
-  <input id="lobbyIDInput" placeholder="Lobby ID" />
+  <h1>War Game</h1>
+  <input id="playerName" placeholder="Enter Your Name">
+  <button id="hostBtn">Host Lobby</button>
+  <input id="lobbyCodeInput" placeholder="Lobby Code">
   <button id="joinBtn">Join Lobby</button>
 </div>
 
 <div id="lobby">
   <h2>Lobby <span id="hostLabel"></span></h2>
-  <ul id="playerList"></ul>
-  <button id="startBtn">Start Game</button>
+  <div class="player-list" id="players"></div>
+  <button id="startBtn" disabled>Start Game</button>
 </div>
 
 <div id="game">
-  <div id="turnIndicator">Current Turn: </div>
-  <canvas id="map"></canvas>
-  <div class="statsBox" id="statsBox"></div>
+  <div id="top-bar">Current Turn: </div>
+  <canvas id="mapCanvas" width="1200" height="700"></canvas>
+  <div id="country-stats"></div>
   <button id="endTurnBtn">End Turn</button>
 </div>
 
-<script src="/socket.io/socket.io.js"></script>
+<script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
 <script>
 const socket = io();
-let lobbyID = null;
-let playerID = null;
-let players = [];
+let playerName = '';
+let lobbyCode = '';
+let playerIndex = null;
 let countries = [];
-let currentTurn = 0;
-let resources = {};
+let currentPlayer = null;
+let units = [];
 
-const menuDiv = document.getElementById("menu");
-const lobbyDiv = document.getElementById("lobby");
-const gameDiv = document.getElementById("game");
-const playerList = document.getElementById("playerList");
-const hostLabel = document.getElementById("hostLabel");
-const turnIndicator = document.getElementById("turnIndicator");
-const statsBox = document.getElementById("statsBox");
-const mapCanvas = document.getElementById("map");
-const ctx = mapCanvas.getContext("2d");
-
-document.getElementById("createBtn").onclick = () => {
-  const name = document.getElementById("playerName").value || "Player";
-  socket.emit("createLobby", { playerName: name });
+// --- Lobby ---
+document.getElementById('hostBtn').onclick = () => {
+  playerName = document.getElementById('playerName').value || 'Player';
+  socket.emit('hostLobby', playerName);
 };
 
-document.getElementById("joinBtn").onclick = () => {
-  const name = document.getElementById("playerName").value || "Player";
-  const inputID = document.getElementById("lobbyIDInput").value;
-  socket.emit("joinLobby", { lobbyID: inputID, playerName: name });
+document.getElementById('joinBtn').onclick = () => {
+  playerName = document.getElementById('playerName').value || 'Player';
+  lobbyCode = document.getElementById('lobbyCodeInput').value;
+  if(lobbyCode) socket.emit('joinLobby', { name: playerName, code: lobbyCode });
 };
 
-document.getElementById("startBtn").onclick = () => {
-  socket.emit("startGame", { lobbyID });
-};
-
-document.getElementById("endTurnBtn").onclick = () => {
-  socket.emit("endTurn", { lobbyID });
-};
-
-// Lobby updates
-socket.on("lobbyCreated", (data) => {
-  lobbyID = data.lobbyID;
-  menuDiv.style.display = "none";
-  lobbyDiv.style.display = "block";
+socket.on('lobbyCreated', code => {
+  lobbyCode = code;
+  document.getElementById('menu').style.display = 'none';
+  document.getElementById('lobby').style.display = 'block';
+  document.getElementById('hostLabel').innerText = ' (Host)';
 });
 
-socket.on("updatePlayers", (plrs) => {
-  players = plrs;
-  playerList.innerHTML = "";
-  plrs.forEach((p) => {
-    const li = document.createElement("li");
-    li.textContent = p.name + (p.id === players[0].id ? " [Host]" : "");
-    playerList.appendChild(li);
+socket.on('lobbyJoined', data => {
+  document.getElementById('menu').style.display = 'none';
+  document.getElementById('lobby').style.display = 'block';
+  document.getElementById('hostLabel').innerText = data.isHost ? ' (Host)' : '';
+  updatePlayers(data.players);
+  document.getElementById('startBtn').disabled = !data.isHost || data.players.length < 2;
+});
+
+socket.on('updatePlayers', updatePlayers);
+function updatePlayers(players){
+  const container = document.getElementById('players');
+  container.innerHTML = '';
+  players.forEach(p => {
+    const div = document.createElement('div');
+    div.innerText = p.name + (p.isHost ? ' (Host)' : '') + (p.isBot ? ' [Bot]' : '');
+    container.appendChild(div);
   });
-  // host button visibility
-  document.getElementById("startBtn").style.display = (players[0].id === socket.id && players.length >= 2) ? "block" : "none";
-});
+  document.getElementById('startBtn').disabled = !players.some(p=>p.isHost) || players.length < 2;
+}
 
-// Game started
-socket.on("gameStarted", (data) => {
-  lobbyDiv.style.display = "none";
-  gameDiv.style.display = "block";
-  players = data.players;
+document.getElementById('startBtn').onclick = () => {
+  socket.emit('startGame', lobbyCode);
+};
+
+// --- Game ---
+socket.on('startGameClient', data => {
+  document.getElementById('lobby').style.display = 'none';
+  document.getElementById('game').style.display = 'block';
   countries = data.countries;
-  resources = data.resources;
-  currentTurn = data.currentTurn;
+  playerIndex = data.playerIndex;
+  currentPlayer = data.currentPlayer;
   drawMap();
-  updateTurnIndicator();
+  updateTopBar();
 });
 
-// Turn updates
-socket.on("updateTurn", (turn) => {
-  currentTurn = turn;
-  updateTurnIndicator();
-});
+// --- Map & Stats ---
+const canvas = document.getElementById('mapCanvas');
+const ctx = canvas.getContext('2d');
+const statsDiv = document.getElementById('country-stats');
 
-function updateTurnIndicator() {
-  const player = players[currentTurn];
-  turnIndicator.textContent = `Current Turn: ${player.name} ${player.isBot ? "[Bot]" : ""}`;
-}
-
-// MAP
-mapCanvas.width = window.innerWidth;
-mapCanvas.height = window.innerHeight * 0.8;
-
-function drawMap() {
-  ctx.clearRect(0, 0, mapCanvas.width, mapCanvas.height);
-  countries.forEach((c) => {
-    const x = c.position.x * mapCanvas.width;
-    const y = c.position.y * mapCanvas.height;
-    c.screenX = x;
-    c.screenY = y;
-    ctx.fillStyle = c.owner ? c.owner.color : `hsl(${Math.random()*360},50%,50%)`;
-    ctx.beginPath();
-    ctx.arc(x, y, 20, 0, Math.PI*2);
-    ctx.fill();
-    ctx.fillStyle = "#000";
-    ctx.fillText(c.name, x-15, y-25);
-  });
-}
-
-mapCanvas.onclick = (e) => {
-  const rect = mapCanvas.getBoundingClientRect();
-  const mx = e.clientX - rect.left;
-  const my = e.clientY - rect.top;
-  for (const c of countries) {
-    const dx = mx - c.screenX;
-    const dy = my - c.screenY;
-    if (Math.sqrt(dx*dx + dy*dy) < 20) {
-      showStats(c, mx, my);
+canvas.onclick = e => {
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  for(const c of countries){
+    if(pointInPolygon([x,y], c.polygon)){
+      showCountryStats(c, x, y);
       break;
     }
   }
 };
 
-function showStats(c, x, y) {
-  statsBox.style.display = "block";
-  statsBox.style.left = x + "px";
-  statsBox.style.top = y + "px";
-  statsBox.innerHTML = `
-    <b>${c.name}</b><br>
-    Owner: ${c.owner ? c.owner.name : "None"}<br>
-    Air: ${c.stats.air}<br>
-    Naval: ${c.stats.naval}<br>
-    Ground: ${c.stats.ground}<br>
-    Resources: ${c.stats.resources}
-  `;
+function showCountryStats(country, x, y){
+  statsDiv.style.left = x + 'px';
+  statsDiv.style.top = y + 'px';
+  statsDiv.innerHTML = `<b>${country.name}</b><br>Owner: ${country.owner}<br>`+
+                        `Air: ${country.air} <br>Naval: ${country.naval} <br>`+
+                        `Ground: ${country.ground} <br>Resources: ${country.resources}`;
+  statsDiv.style.display = 'block';
 }
+
+function pointInPolygon(point, vs) {
+  let x = point[0], y = point[1];
+  let inside = false;
+  for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+      let xi = vs[i][0], yi = vs[i][1];
+      let xj = vs[j][0], yj = vs[j][1];
+      let intersect = ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+      if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function drawMap(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  for(const c of countries){
+    ctx.fillStyle = c.color;
+    ctx.beginPath();
+    c.polygon.forEach((p,i)=> i===0?ctx.moveTo(p[0],p[1]):ctx.lineTo(p[0],p[1]));
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'black';
+    ctx.stroke();
+    ctx.fillStyle = 'white';
+    ctx.fillText(c.name, c.center[0]-10, c.center[1]);
+  }
+}
+
+// --- Turn system ---
+function updateTopBar(){
+  document.getElementById('top-bar').innerText = `Current Turn: ${currentPlayer.name}`;
+}
+
+document.getElementById('endTurnBtn').onclick = () => {
+  socket.emit('endTurn', { lobbyCode });
+};
+
+socket.on('updateTurn', data => {
+  currentPlayer = data.currentPlayer;
+  drawMap();
+  updateTopBar();
+});
+
+// --- Units & movement placeholder ---
+// Ships, tanks, planes, etc., will move on map based on turns.
+// We'll animate them later with positions updated from server.
+
 </script>
 </body>
 </html>
