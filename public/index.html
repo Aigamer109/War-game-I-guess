@@ -1,118 +1,206 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>World Strategy Map</title>
+  <title>Strategy Map</title>
   <style>
-    body { font-family: sans-serif; margin: 0; padding: 0; background: #f0f0f0; }
+    body { margin: 0; font-family: sans-serif; }
     #turnBox {
       background: #ccc; padding: 10px; text-align: center; font-weight: bold;
+      position: fixed; top: 0; left: 0; right: 0; z-index: 2;
     }
-    #map {
-      display: grid;
-      grid-template-columns: repeat(10, 60px);
-      grid-template-rows: repeat(5, 60px);
-      gap: 2px;
-      padding: 10px;
+    #controls {
+      padding: 10px; text-align: center;
+      position: fixed; bottom: 0; left: 0; right: 0; background: #eee; z-index: 2;
     }
-    .country {
-      background: #eee;
-      border: 1px solid #999;
-      text-align: center;
-      font-size: 10px;
+    #mapCanvas {
+      display: block;
+      margin: 50px auto 50px auto;
+      background: #3399ff;
       cursor: pointer;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
     }
-    .country.landlocked { background: #ddd; }
-    #controls { padding: 10px; text-align: center; }
-    button { padding: 5px 10px; font-size: 14px; margin-top: 5px; }
+    .tooltip {
+      position: absolute;
+      background: rgba(255,255,255,0.9);
+      border: 1px solid #333;
+      padding: 5px;
+      font-size: 12px;
+      display: none;
+      pointer-events: none;
+      z-index: 3;
+    }
   </style>
 </head>
 <body>
   <div id="turnBox">Waiting to start...</div>
-  <div id="map"></div>
+  <canvas id="mapCanvas" width="1000" height="600"></canvas>
+  <div class="tooltip" id="tooltip"></div>
   <div id="controls">
     <button id="endTurnBtn" onclick="endTurn()" disabled>End Turn</button>
   </div>
 
-  <script src="/socket.io/socket.io.js"></script>
   <script>
-    const socket = io();
-    let myId = null;
-    let currentTurnIndex = 0;
-    let players = [];
-    let countriesData = [];
-    let myIndex = null;
+    const canvas = document.getElementById("mapCanvas");
+    const ctx = canvas.getContext("2d");
+    const tooltip = document.getElementById("tooltip");
 
-    // Country generation
     const TOTAL_COUNTRIES = 50;
+    let countries = [];
+    let players = [
+      {name:"Player 1", color:"#FF5555"},
+      {name:"Player 2", color:"#55FF55"},
+      {name:"Player 3", color:"#5555FF"},
+      {name:"Player 4", color:"#FFFF55"}
+    ];
 
-    function randomStats(size, landlocked) {
-      return {
-        air: Math.floor(size * 5 + Math.random() * 10),
-        naval: landlocked ? 0 : Math.floor(size * 5 + Math.random() * 10),
-        ground: Math.floor(size * 10 + Math.random() * 20),
-        resources: Math.floor(Math.random() * 100 + 50)
-      };
+    let currentTurn = 0;
+    let selectedCountry = null;
+
+    const countryNames = [
+      "Aridia","Borelia","Cascadia","Deltora","Eldoria",
+      "Falken","Gryphia","Hesperia","Ithara","Jovaria",
+      "Keldor","Lunaris","Morvia","Neridia","Oceania",
+      "Prydon","Quenara","Ravaria","Sylvania","Tormund",
+      "Ulgor","Valeria","Wyther","Xandria","Ylleria",
+      "Zerith","Aldora","Brassia","Cerulia","Draxia",
+      "Evoran","Falnora","Galdor","Havania","Ivernia",
+      "Jorvik","Kelaria","Lumina","Mythra","Novara",
+      "Orvia","Prismora","Quorra","Rivoria","Sylvara",
+      "Torinia","Ulther","Vandria","Wysteria","Xerath"
+    ];
+
+    // Random polygon generator
+    function generateCountryPolygon(cx,cy,radius,points=6){
+      const angleStep = (Math.PI*2)/points;
+      let polygon = [];
+      for(let i=0;i<points;i++){
+        const angle = i*angleStep + Math.random()*0.5;
+        const r = radius*(0.7 + Math.random()*0.6);
+        polygon.push({x: cx+Math.cos(angle)*r, y: cy+Math.sin(angle)*r});
+      }
+      return polygon;
     }
 
-    function generateCountries() {
-      countriesData = [];
-      for (let i = 0; i < TOTAL_COUNTRIES; i++) {
-        const size = Math.floor(Math.random() * 3 + 1); // 1=small, 2=medium, 3=large
-        const landlocked = Math.random() < 0.3; // 30% chance landlocked
-        countriesData.push({
-          id: i,
-          name: `C${i+1}`,
-          size,
-          landlocked,
-          stats: randomStats(size, landlocked),
-          owner: null
+    function randomColor(){
+      const letters="0123456789ABCDEF";
+      let color="#";
+      for(let i=0;i<6;i++) color+=letters[Math.floor(Math.random()*16)];
+      return color;
+    }
+
+    function generateCountries(){
+      countries=[];
+      const usedCenters=[];
+      for(let i=0;i<TOTAL_COUNTRIES;i++){
+        let cx,cy;
+        do{
+          cx=Math.random()*canvas.width*0.9 + canvas.width*0.05;
+          cy=Math.random()*canvas.height*0.9 + canvas.height*0.05;
+        }while(usedCenters.some(c=>Math.hypot(c.x-cx,c.y-cy)<40));
+        usedCenters.push({x:cx,y:cy});
+
+        countries.push({
+          id:i,
+          name:countryNames[i],
+          polygon: generateCountryPolygon(cx,cy,20 + Math.random()*20),
+          landlocked: Math.random()<0.3,
+          stats:{
+            air: Math.floor(Math.random()*15+5),
+            naval: Math.random()<0.3?0:Math.floor(Math.random()*15+5),
+            ground: Math.floor(Math.random()*30+10),
+            resources: Math.floor(Math.random()*100+50)
+          },
+          owner: null,
+          color: randomColor()
         });
       }
     }
 
-    function renderMap() {
-      const map = document.getElementById("map");
-      map.innerHTML = "";
-      countriesData.forEach(c => {
-        const div = document.createElement("div");
-        div.className = "country" + (c.landlocked ? " landlocked" : "");
-        div.id = "country-" + c.id;
-        div.innerHTML = `<b>${c.name}</b><br>
-          🌍${c.owner || ""}<br>
-          A:${c.stats.air} N:${c.stats.naval} G:${c.stats.ground} R:${c.stats.resources}`;
-        div.onclick = () => countryClick(c.id);
-        map.appendChild(div);
+    function drawMap(){
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      countries.forEach(c=>{
+        ctx.beginPath();
+        c.polygon.forEach((p,i)=> i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y));
+        ctx.closePath();
+        ctx.fillStyle = c.owner ? c.owner.color : c.color;
+        ctx.fill();
+        ctx.strokeStyle = "#333";
+        ctx.stroke();
+
+        // draw country name
+        const avgX = c.polygon.reduce((a,p)=>a+p.x,0)/c.polygon.length;
+        const avgY = c.polygon.reduce((a,p)=>a+p.y,0)/c.polygon.length;
+        ctx.fillStyle="#000";
+        ctx.font="10px sans-serif";
+        ctx.textAlign="center";
+        ctx.fillText(c.name, avgX, avgY);
       });
     }
 
-    function countryClick(id) {
-      const c = countriesData[id];
-      alert(`Country ${c.name}\nAir: ${c.stats.air}\nNaval: ${c.stats.naval}\nGround: ${c.stats.ground}\nResources: ${c.stats.resources}`);
+    function getCountryAt(x,y){
+      for(let c of countries){
+        let inside=false;
+        const pts=c.polygon;
+        for(let i=0,j=pts.length-1;i<pts.length;j=i++){
+          if(((pts[i].y>y)!=(pts[j].y>y)) &&
+             (x<(pts[j].x-pts[i].x)*(y-pts[i].y)/(pts[j].y-pts[i].y)+pts[i].x)) inside=!inside;
+        }
+        if(inside) return c;
+      }
+      return null;
     }
 
-    function endTurn() {
-      socket.emit("endTurn", "mapRoom"); // we will have a fixed room for now
-    }
+    canvas.addEventListener("click",e=>{
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const c = getCountryAt(x,y);
+      if(c){
+        selectedCountry = c;
 
-    socket.on("myId", id => { myId = id; });
-
-    socket.on("turnUpdate", (data) => {
-      players = data.players;
-      currentTurnIndex = data.turnIndex;
-      myIndex = players.indexOf(myId);
-
-      const currentPlayer = players[currentTurnIndex];
-      document.getElementById("turnBox").innerText =
-        myIndex === currentTurnIndex ? `🟢 Your Turn (${currentPlayer})` : `⏳ ${currentPlayer}'s Turn`;
-
-      document.getElementById("endTurnBtn").disabled = (myIndex !== currentTurnIndex);
+        // show tooltip
+        const avgX = c.polygon.reduce((a,p)=>a+p.x,0)/c.polygon.length;
+        const avgY = c.polygon.reduce((a,p)=>a+p.y,0)/c.polygon.length;
+        tooltip.style.left = rect.left + avgX + "px";
+        tooltip.style.top = rect.top + avgY - 60 + "px";
+        tooltip.innerHTML = `<b>${c.name}</b><br>
+          Owner: ${c.owner ? c.owner.name : "Neutral"}<br>
+          Air: ${c.stats.air}<br>
+          Naval: ${c.stats.naval}<br>
+          Ground: ${c.stats.ground}<br>
+          Resources: ${c.stats.resources}`;
+        tooltip.style.display = "block";
+      }else tooltip.style.display="none";
     });
 
+    function captureCountry(country, player){
+      country.owner = player;
+      country.color = player.color;
+    }
+
+    function endTurn(){
+      currentTurn = (currentTurn+1)%players.length;
+      updateTurnBox();
+    }
+
+    function updateTurnBox(){
+      const currentPlayer = players[currentTurn];
+      document.getElementById("turnBox").innerText =
+        `🟢 ${currentPlayer.name}'s Turn`;
+      document.getElementById("endTurnBtn").disabled=false;
+    }
+
     generateCountries();
-    renderMap();
+    drawMap();
+    updateTurnBox();
+
+    // Example capture logic (for testing)
+    canvas.addEventListener("dblclick", e=>{
+      if(selectedCountry){
+        captureCountry(selectedCountry, players[currentTurn]);
+        drawMap();
+      }
+    });
+
   </script>
 </body>
 </html>
