@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>World Strategy Game</title>
+</head>
+<body>
+  <h1>World Strategy Lobby</h1>
+
+  <button onclick="createRoom()">Create Room</button>
+  <br><br>
+
+  <input id="roomInput" placeholder="Enter Room Code" />
+  <button onclick="joinRoom()">Join Room</button>
+
+  <h2 id="status"></h2>
+
+  <button onclick="endTurn()">End Turn</button>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    let currentRoom = null;
+
+    function createRoom() {
+      socket.emit("createRoom");
+    }
+
+    function joinRoom() {
+      const code = document.getElementById("roomInput").value;
+      socket.emit("joinRoom", code);
+      currentRoom = code;
+    }
+
+    function endTurn() {
+      if (currentRoom) {
+        socket.emit("endTurn", currentRoom);
+      }
+    }
+
+    socket.on("roomCreated", (code) => {
+      currentRoom = code;
+      document.getElementById("status").innerText = "Room Code: " + code;
+    });
+
+    socket.on("updatePlayers", (players) => {
+      document.getElementById("status").innerText =
+        "Players in Room: " + players.length;
+    });
+
+    socket.on("turnUpdate", (turn) => {
+      document.getElementById("status").innerText =
+        "Current Turn: Player Index " + turn;
+    });
+
+    socket.on("worldPeaceVote", () => {
+      alert("World Peace Vote Triggered!");
+    });
+
+    socket.on("errorMessage", (msg) => {
+      alert(msg);
+    });
+  </script>
+</body>
+</html>
