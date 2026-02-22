@@ -22,7 +22,6 @@ function generateRoomCode() {
 io.on("connection", (socket) => {
   console.log("Player connected:", socket.id);
 
-  // CREATE ROOM
   socket.on("createRoom", () => {
     const code = generateRoomCode();
     rooms[code] = {
@@ -35,45 +34,64 @@ io.on("connection", (socket) => {
     rooms[code].players.push(socket.id);
 
     socket.emit("roomCreated", code);
+    io.to(code).emit("updatePlayers", rooms[code].players);
     console.log(`Room ${code} created by ${socket.id}`);
   });
 
-  // JOIN ROOM
   socket.on("joinRoom", (code) => {
     if (!rooms[code]) {
       socket.emit("errorMessage", "Room not found.");
       return;
     }
 
-    socket.join(code);
-    rooms[code].players.push(socket.id);
-
-    io.to(code).emit("updatePlayers", rooms[code].players);
-    console.log(`${socket.id} joined room ${code}`);
+    if (!rooms[code].players.includes(socket.id)) {
+      socket.join(code);
+      rooms[code].players.push(socket.id);
+      io.to(code).emit("updatePlayers", rooms[code].players);
+      console.log(`${socket.id} joined room ${code}`);
+    } else {
+      socket.emit("errorMessage", "You are already in this room!");
+    }
   });
 
-  // END TURN
   socket.on("endTurn", (code) => {
     if (!rooms[code]) return;
 
-    rooms[code].turn++;
+    const room = rooms[code];
+    if (socket.id !== room.players[room.turn]) {
+      socket.emit("errorMessage", "Not your turn!");
+      return;
+    }
 
-    if (rooms[code].turn >= rooms[code].players.length) {
-      rooms[code].turn = 0;
-      rooms[code].cycleCount++;
+    room.turn++;
 
-      if (rooms[code].cycleCount >= 4) {
+    if (room.turn >= room.players.length) {
+      room.turn = 0;
+      room.cycleCount++;
+
+      if (room.cycleCount >= 4) {
         io.to(code).emit("worldPeaceVote");
-        rooms[code].cycleCount = 0;
+        room.cycleCount = 0;
       }
     }
 
-    io.to(code).emit("turnUpdate", rooms[code].turn);
+    io.to(code).emit("turnUpdate", {
+      turnSocketId: room.players[room.turn],
+      turnIndex: room.turn,
+      players: room.players
+    });
   });
 
   socket.on("disconnect", () => {
     console.log("Player disconnected:", socket.id);
-    // Optionally remove from rooms here if you want
+    // Remove from any rooms
+    for (let code in rooms) {
+      let index = rooms[code].players.indexOf(socket.id);
+      if (index !== -1) {
+        rooms[code].players.splice(index, 1);
+        io.to(code).emit("updatePlayers", rooms[code].players);
+      }
+    }
   });
 });
 
