@@ -2,6 +2,11 @@
 <html>
 <head>
   <title>World Strategy Game</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; padding: 50px; }
+    button { padding: 10px 20px; margin: 5px; }
+    input { padding: 5px; width: 100px; text-align: center; }
+  </style>
 </head>
 <body>
   <h1>World Strategy Lobby</h1>
@@ -13,12 +18,15 @@
   <button onclick="joinRoom()">Join Room</button>
 
   <h2 id="status"></h2>
+  <h3 id="players"></h3>
 
   <button onclick="endTurn()">End Turn</button>
 
-  <script src="/socket.io/socket.io.js"></script>
+  <!-- SOCKET.IO -->
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   <script>
-    const socket = io();
+    const socket = io("https://war-game-qc95.onrender.com"); // <-- Your live Render URL
+
     let currentRoom = null;
 
     function createRoom() {
@@ -26,25 +34,27 @@
     }
 
     function joinRoom() {
-      const code = document.getElementById("roomInput").value;
+      const code = document.getElementById("roomInput").value.trim();
+      if (!code) { alert("Enter a room code"); return; }
       socket.emit("joinRoom", code);
-      currentRoom = code;
     }
 
     function endTurn() {
-      if (currentRoom) {
-        socket.emit("endTurn", currentRoom);
-      }
+      if (!currentRoom) { alert("Not in a room"); return; }
+      socket.emit("endTurn", currentRoom);
     }
 
+    // SOCKET EVENTS
     socket.on("roomCreated", (code) => {
       currentRoom = code;
       document.getElementById("status").innerText = "Room Code: " + code;
+      document.getElementById("players").innerText = "Players in Room: 1";
     });
 
     socket.on("updatePlayers", (players) => {
-      document.getElementById("status").innerText =
+      document.getElementById("players").innerText =
         "Players in Room: " + players.length;
+      if (!currentRoom) currentRoom = players[0]; // set room if joining
     });
 
     socket.on("turnUpdate", (turn) => {
@@ -53,11 +63,16 @@
     });
 
     socket.on("worldPeaceVote", () => {
-      alert("World Peace Vote Triggered!");
+      alert("🌍 World Peace Vote Triggered!");
     });
 
     socket.on("errorMessage", (msg) => {
-      alert(msg);
+      alert("❌ " + msg);
+    });
+
+    socket.on("connect_error", (err) => {
+      console.error("Socket connection error:", err);
+      alert("Socket connection failed. Check your server URL.");
     });
   </script>
 </body>
