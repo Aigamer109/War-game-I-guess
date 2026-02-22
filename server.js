@@ -11,6 +11,13 @@ app.use(express.static("public"));
 let rooms = {};
 const MAX_PLAYERS = 4;
 
+const COUNTRIES = [
+  { name: "USA", flag: "🇺🇸" },
+  { name: "Russia", flag: "🇷🇺" },
+  { name: "China", flag: "🇨🇳" },
+  { name: "UK", flag: "🇬🇧" }
+];
+
 function generateRoomCode() {
   return Math.random().toString(36).substring(2, 7).toUpperCase();
 }
@@ -25,6 +32,7 @@ io.on("connection", (socket) => {
     rooms[code] = {
       host: socket.id,
       players: [socket.id],
+      countries: {}, // map playerId => country
       turn: 0,
       cycleCount: 0,
       started: false
@@ -58,14 +66,21 @@ io.on("connection", (socket) => {
       return;
     }
 
-    // Fill empty slots with AI players
+    // Fill empty slots with bots
     while (room.players.length < MAX_PLAYERS) {
-      room.players.push("AI_" + (room.players.length + 1));
+      room.players.push("BOT_" + (room.players.length + 1));
     }
+
+    // Assign random unique countries to all players
+    const shuffled = [...COUNTRIES].sort(() => Math.random() - 0.5);
+    room.countries = {};
+    room.players.forEach((p, i) => {
+      room.countries[p] = shuffled[i];
+    });
 
     room.started = true;
     io.to(code).emit("gameStarted", room);
-    io.to(code).emit("turnUpdate", { turnIndex: room.turn, players: room.players });
+    io.to(code).emit("turnUpdate", { turnIndex: room.turn, players: room.players, countries: room.countries });
   });
 
   socket.on("endTurn", (code) => {
@@ -84,7 +99,7 @@ io.on("connection", (socket) => {
       }
     }
 
-    io.to(code).emit("turnUpdate", { turnIndex: room.turn, players: room.players });
+    io.to(code).emit("turnUpdate", { turnIndex: room.turn, players: room.players, countries: room.countries });
   });
 
   socket.on("disconnect", () => {
@@ -92,13 +107,13 @@ io.on("connection", (socket) => {
     for (let code in rooms) {
       const room = rooms[code];
       room.players = room.players.filter(p => p !== socket.id);
+      delete room.countries[socket.id];
 
       if (room.host === socket.id && room.players.length > 0) {
         room.host = room.players[0]; // assign new host
       }
 
       if (room.players.length === 0) delete rooms[code];
-
       else io.to(code).emit("updatePlayers", room);
     }
   });
