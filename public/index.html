@@ -6,6 +6,7 @@
     body { font-family: sans-serif; text-align: center; padding: 50px; }
     button { padding: 10px 20px; margin: 5px; }
     input { padding: 5px; width: 100px; text-align: center; }
+    .turn { font-weight: bold; color: green; }
   </style>
 </head>
 <body>
@@ -19,15 +20,19 @@
 
   <h2 id="status"></h2>
   <h3 id="players"></h3>
+  <h3 id="turnInfo"></h3>
 
-  <button onclick="endTurn()">End Turn</button>
+  <button id="endTurnBtn" onclick="endTurn()">End Turn</button>
 
-  <!-- SOCKET.IO -->
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   <script>
-    const socket = io("https://war-game-qc95.onrender.com"); // <-- Your live Render URL
-
+    const socket = io("https://war-game-qc95.onrender.com"); // <-- Your Render URL
     let currentRoom = null;
+    let myId = null;
+
+    socket.on("connect", () => {
+      myId = socket.id;
+    });
 
     function createRoom() {
       socket.emit("createRoom");
@@ -37,6 +42,7 @@
       const code = document.getElementById("roomInput").value.trim();
       if (!code) { alert("Enter a room code"); return; }
       socket.emit("joinRoom", code);
+      currentRoom = code;
     }
 
     function endTurn() {
@@ -44,24 +50,41 @@
       socket.emit("endTurn", currentRoom);
     }
 
-    // SOCKET EVENTS
+    // ROOM CREATED
     socket.on("roomCreated", (code) => {
       currentRoom = code;
       document.getElementById("status").innerText = "Room Code: " + code;
-      document.getElementById("players").innerText = "Players in Room: 1";
     });
 
+    // UPDATE PLAYERS
     socket.on("updatePlayers", (players) => {
-      document.getElementById("players").innerText =
-        "Players in Room: " + players.length;
-      if (!currentRoom) currentRoom = players[0]; // set room if joining
+      let list = players.map((p,i) => {
+        let name = "Player " + (i+1);
+        return (p===myId ? name + " (You)" : name);
+      });
+      document.getElementById("players").innerText = "Players: " + list.join(", ");
     });
 
-    socket.on("turnUpdate", (turn) => {
-      document.getElementById("status").innerText =
-        "Current Turn: Player Index " + turn;
+    // TURN UPDATE
+    socket.on("turnUpdate", (data) => {
+      const { turnSocketId, turnIndex, players } = data;
+      let turnName = "Player " + (turnIndex+1);
+      if (turnSocketId === myId) {
+        document.getElementById("turnInfo").innerHTML = `🟢 Your turn!`;
+        document.getElementById("endTurnBtn").disabled = false;
+      } else {
+        document.getElementById("turnInfo").innerHTML = `⏳ ${turnName}'s turn`;
+        document.getElementById("endTurnBtn").disabled = true;
+      }
+      // update players list
+      let list = players.map((p,i) => {
+        let name = "Player " + (i+1);
+        return (p===myId ? name + " (You)" : name);
+      });
+      document.getElementById("players").innerText = "Players: " + list.join(", ");
     });
 
+    // WORLD PEACE VOTE
     socket.on("worldPeaceVote", () => {
       alert("🌍 World Peace Vote Triggered!");
     });
