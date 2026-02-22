@@ -3,142 +3,187 @@
 <head>
 <meta charset="UTF-8">
 <title>Grand Strategy War Game</title>
-<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <style>
-body { margin: 0; background: #87ceeb; font-family: sans-serif; }
-#lobby, #game { display:none; padding:20px; }
-#map { position: relative; width: 1000px; height: 600px; margin: auto; background: #4da6ff; }
-.country { position: absolute; cursor: pointer; border: 1px solid #333; }
-.statsMenu, .unitMenu { position: absolute; background: rgba(200,200,200,0.9); padding: 5px; border-radius:5px; display:none; z-index: 10; }
-#turnDisplay { position:absolute; top:10px; left:50%; transform:translateX(-50%); background:#ccc; padding:10px; border-radius:5px; z-index:20; }
-.unit { position:absolute; width:15px; height:15px; border-radius:50%; }
-.airUnit { background:red; }
-.groundUnit { background:green; }
-.seaUnit { background:blue; }
+  body { margin: 0; font-family: sans-serif; background: #87CEEB; }
+  #lobby, #game { display: none; }
+  #lobby { padding: 20px; }
+  #game { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+  #map { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+  .country { position: absolute; cursor: pointer; border: 1px solid #333; text-align: center; color: #fff; font-size: 12px; }
+  #turnIndicator { position: absolute; top: 0; left: 0; width: 100%; background: #ccc; padding: 5px; text-align: center; z-index: 1000; }
+  #unitMenu { position: absolute; top: 50px; right: 10px; width: 200px; background: rgba(200,200,200,0.9); padding: 10px; display: none; }
+  .unitTab { cursor: pointer; display: inline-block; margin: 0 2px; padding: 2px 5px; background: #aaa; }
+  .unitTab.active { background: #888; }
+  .unitList { margin-top: 5px; }
 </style>
 </head>
 <body>
 
-<div id="menu">
-    <h1>Grand Strategy War Game</h1>
-    <input id="playerNameInput" placeholder="Enter Player Name" />
-    <button id="createBtn">Create Lobby</button>
-    <input id="joinCodeInput" placeholder="Enter Lobby Code" />
-    <button id="joinBtn">Join Lobby</button>
-</div>
-
 <div id="lobby">
-    <h2>Lobby <span id="lobbyCode"></span></h2>
-    <ul id="playersList"></ul>
-    <button id="startBtn">Start Game</button>
+  <h2>Lobby</h2>
+  <label>Name: <input id="playerName" type="text" placeholder="Player1"></label>
+  <button id="hostBtn">Host Lobby</button>
+  <button id="joinBtn">Join Lobby</button>
+  <div id="lobbyPlayers"></div>
+  <button id="startBtn" disabled>Start Game</button>
 </div>
 
 <div id="game">
-    <div id="turnDisplay">Current Turn: </div>
-    <div id="map"></div>
-    <div id="statsMenu" class="statsMenu"></div>
-    <div id="unitMenu" class="unitMenu"></div>
+  <div id="turnIndicator">Current Turn: </div>
+  <canvas id="map"></canvas>
+  <div id="unitMenu">
+    <div>
+      <span class="unitTab active" data-type="ground">Ground</span>
+      <span class="unitTab" data-type="air">Air</span>
+      <span class="unitTab" data-type="sea">Sea</span>
+    </div>
+    <div class="unitList"></div>
+  </div>
 </div>
 
+<script src="/socket.io/socket.io.js"></script>
 <script>
 const socket = io();
-let playerId = null;
-let lobbyCode = null;
-let isHost = false;
-let currentPlayerIndex = 0;
-let countries = [];
+
+// Lobby elements
+const lobbyDiv = document.getElementById('lobby');
+const gameDiv = document.getElementById('game');
+const hostBtn = document.getElementById('hostBtn');
+const joinBtn = document.getElementById('joinBtn');
+const startBtn = document.getElementById('startBtn');
+const playerNameInput = document.getElementById('playerName');
+const lobbyPlayersDiv = document.getElementById('lobbyPlayers');
+const turnIndicator = document.getElementById('turnIndicator');
+
+let playerName = '';
+let playerId = '';
 let players = [];
-let units = [];
-let gameData = {};
+let mapData = [];
+let currentPlayerIndex = 0;
+let selectedCountry = null;
+let unitMenuVisible = false;
 
-// Lobby Buttons
-document.getElementById('createBtn').onclick = () => {
-    const name = document.getElementById('playerNameInput').value || 'Player';
-    socket.emit('createLobby', name);
+// Lobby actions
+hostBtn.onclick = () => {
+  playerName = playerNameInput.value || 'Player1';
+  socket.emit('hostLobby', playerName);
 };
 
-document.getElementById('joinBtn').onclick = () => {
-    const code = document.getElementById('joinCodeInput').value.toUpperCase();
-    const name = document.getElementById('playerNameInput').value || 'Player';
-    socket.emit('joinLobby', code, name);
+joinBtn.onclick = () => {
+  playerName = playerNameInput.value || 'PlayerX';
+  socket.emit('joinLobby', playerName);
 };
 
-socket.on('lobbyCreated', (code) => {
-    lobbyCode = code;
-    isHost = true;
-    document.getElementById('menu').style.display='none';
-    document.getElementById('lobby').style.display='block';
-    document.getElementById('lobbyCode').innerText = code;
+startBtn.onclick = () => socket.emit('startGame');
+
+socket.on('lobbyUpdate', (data) => {
+  players = data.players;
+  lobbyPlayersDiv.innerHTML = players.map(p => 
+    `${p.name}${p.host ? ' [Host]' : ''}${p.bot ? ' [Bot]' : ''}`
+  ).join('<br>');
+  startBtn.disabled = !(players.length >= 2 && players.find(p => p.host && !p.bot));
 });
 
-socket.on('updateLobby', (lobby) => {
-    players = [...lobby.players, ...lobby.bots];
-    document.getElementById('playersList').innerHTML = '';
-    players.forEach(p => {
-        const li = document.createElement('li');
-        li.innerText = p.name + (lobby.host===p.id?' (Host)':'');
-        document.getElementById('playersList').appendChild(li);
-    });
+socket.on('gameStart', (data) => {
+  lobbyDiv.style.display = 'none';
+  gameDiv.style.display = 'block';
+  mapData = data.map;
+  currentPlayerIndex = data.currentPlayerIndex;
+  renderMap();
+  updateTurnIndicator();
 });
 
-document.getElementById('startBtn').onclick = () => {
-    socket.emit('startGame');
+// Map rendering
+const canvas = document.getElementById('map');
+const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+function renderMap() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  mapData.forEach(c => {
+    ctx.fillStyle = c.color;
+    ctx.beginPath();
+    ctx.moveTo(c.polygon[0].x, c.polygon[0].y);
+    for(let i=1;i<c.polygon.length;i++) ctx.lineTo(c.polygon[i].x,c.polygon[i].y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#333';
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.fillText(c.name, c.center.x-ctx.measureText(c.name).width/2, c.center.y);
+  });
+}
+
+canvas.onclick = (e) => {
+  const mx = e.clientX;
+  const my = e.clientY;
+  selectedCountry = mapData.find(c => isPointInPolygon({x:mx,y:my}, c.polygon));
+  if(selectedCountry) {
+    showUnitMenu(selectedCountry);
+  } else hideUnitMenu();
 };
 
-socket.on('gameStarted', (lobby) => {
-    gameData = lobby;
-    document.getElementById('lobby').style.display='none';
-    document.getElementById('game').style.display='block';
-    initializeMap();
-    updateTurnDisplay();
+function isPointInPolygon(point, vs) {
+  let x = point.x, y = point.y;
+  let inside = false;
+  for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+    let xi = vs[i].x, yi = vs[i].y;
+    let xj = vs[j].x, yj = vs[j].y;
+    let intersect = ((yi > y) != (yj > y)) && 
+                    (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+    if(intersect) inside = !inside;
+  }
+  return inside;
+}
+
+// Unit menu
+const unitMenuDiv = document.getElementById('unitMenu');
+const tabs = document.querySelectorAll('.unitTab');
+const unitListDiv = unitMenuDiv.querySelector('.unitList');
+
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(tab => tab.classList.remove('active'));
+  t.classList.add('active');
+  renderUnits(selectedCountry, t.dataset.type);
 });
 
-function initializeMap(){
-    const map = document.getElementById('map');
-    map.innerHTML = '';
-    countries = [];
-    const countryNames = ["USA","Russia","China","UK","France","Germany","Brazil","India","Australia","Canada","Japan","Italy","Mexico","SouthAfrica","Egypt","Argentina","SaudiArabia","Spain","Turkey","Indonesia","Pakistan","Norway","Sweden","Finland","Poland","Ukraine","Thailand","Vietnam","SouthKorea","NorthKorea","Chile","Colombia","Peru","Venezuela","Nigeria","Kenya","Morocco","Algeria","Greece","Portugal","Netherlands","Belgium","Iraq","Iran","Syria","Philippines","Malaysia","Singapore","NewZealand","Cuba","CzechRepublic"];
-
-    for(let i=0;i<50;i++){
-        const c = document.createElement('div');
-        c.classList.add('country');
-        c.style.width = Math.floor(Math.random()*50+50)+'px';
-        c.style.height = Math.floor(Math.random()*50+50)+'px';
-        c.style.background = '#'+Math.floor(Math.random()*16777215).toString(16);
-        c.style.top = Math.floor(Math.random()*500)+'px';
-        c.style.left = Math.floor(Math.random()*900)+'px';
-        c.innerText = countryNames[i];
-        c.dataset.name = countryNames[i];
-        c.dataset.owner = 'neutral';
-        c.dataset.air = Math.floor(Math.random()*100);
-        c.dataset.ground = Math.floor(Math.random()*100);
-        c.dataset.naval = Math.floor(Math.random()*100);
-        c.dataset.resources = Math.floor(Math.random()*50+50);
-        c.dataset.isCoastal = Math.random()>0.3;
-
-        c.onclick = (e)=>{ showStatsMenu(c, e.pageX, e.pageY); };
-
-        map.appendChild(c);
-        countries.push(c);
-    }
+function showUnitMenu(country) {
+  unitMenuDiv.style.display = 'block';
+  renderUnits(country, 'ground');
 }
 
-function showStatsMenu(country, x, y){
-    const menu = document.getElementById('statsMenu');
-    menu.style.display='block';
-    menu.style.left = x+'px';
-    menu.style.top = y+'px';
-    menu.innerHTML = `<b>${country.dataset.name}</b><br>Owner: ${country.dataset.owner}<br>Air: ${country.dataset.air}<br>Ground: ${country.dataset.ground}<br>Naval: ${country.dataset.naval}<br>Resources: ${country.dataset.resources}`;
+function hideUnitMenu() {
+  unitMenuDiv.style.display = 'none';
 }
 
-document.body.onclick = (e)=>{ if(!e.target.classList.contains('country')) document.getElementById('statsMenu').style.display='none'; };
-
-function updateTurnDisplay(){
-    const display = document.getElementById('turnDisplay');
-    if(players.length>0){
-        display.innerText = `Current Turn: ${players[currentPlayerIndex].name}`;
-    }
+function renderUnits(country, type) {
+  if(!country) return;
+  unitListDiv.innerHTML = '';
+  const units = country.units[type];
+  units.forEach((u,i) => {
+    const btn = document.createElement('button');
+    btn.textContent = `${u.name} (${u.count})`;
+    btn.onclick = () => selectUnit(country, type, i);
+    unitListDiv.appendChild(btn);
+  });
 }
+
+function selectUnit(country,type,index){
+  socket.emit('selectUnit', {countryId: country.id, type, index});
+}
+
+// Turn indicator
+function updateTurnIndicator() {
+  const current = players[currentPlayerIndex];
+  turnIndicator.textContent = `Current Turn: ${current.name}${current.bot ? ' [Bot]' : ''}`;
+}
+
+socket.on('turnUpdate', (index) => {
+  currentPlayerIndex = index;
+  updateTurnIndicator();
+});
+
 </script>
 </body>
 </html>
