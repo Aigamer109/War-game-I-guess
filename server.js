@@ -1,81 +1,109 @@
 const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
+
 const app = express();
-const http = require("http").createServer(app);
-const io = require("socket.io")(http);
+const server = http.createServer(app);
+const io = new Server(server);
 
 app.use(express.static("public"));
 
-const rooms = {}; // { roomCode: { players:[{id,name}], hostId: socketId, turn:0 } }
+let lobbies = {}; // lobbyID -> { players: [], hostId, gameStarted }
 
-function generateRoomCode() {
-  let code = "";
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  for(let i=0;i<4;i++) code += chars.charAt(Math.floor(Math.random()*chars.length));
-  return code;
-}
-
-// Lobby creation
 io.on("connection", (socket) => {
-
-  socket.on("createRoom", (playerName) => {
-    let code;
-    do { code = generateRoomCode(); } while(rooms[code]);
-    rooms[code] = { players:[{id:socket.id, name:playerName}], hostId: socket.id, turn:0 };
-    socket.join(code);
-    socket.emit("roomCreated", code);
-    io.to(code).emit("updatePlayers", rooms[code].players, rooms[code].hostId);
+  socket.on("createLobby", ({ playerName }) => {
+    const lobbyID = Math.random().toString(36).substr(2, 5);
+    lobbies[lobbyID] = {
+      players: [{ id: socket.id, name: playerName, isBot: false }],
+      hostId: socket.id,
+      gameStarted: false,
+      currentTurn: 0,
+      countries: [], // countries will be generated later
+      wars: [], // ongoing wars
+      resources: {}, // player resources
+    };
+    socket.join(lobbyID);
+    socket.emit("lobbyCreated", { lobbyID });
+    io.to(lobbyID).emit("updatePlayers", lobbies[lobbyID].players);
   });
 
-  socket.on("joinRoom", (code, playerName) => {
-    if(!rooms[code]) { socket.emit("errorMessage","Room not found"); return; }
-    if(rooms[code].players.length>=4){ socket.emit("errorMessage","Room full"); return; }
-
-    rooms[code].players.push({id:socket.id, name:playerName});
-    socket.join(code);
-    io.to(code).emit("updatePlayers", rooms[code].players, rooms[code].hostId);
+  socket.on("joinLobby", ({ lobbyID, playerName }) => {
+    const lobby = lobbies[lobbyID];
+    if (!lobby || lobby.players.length >= 4 || lobby.gameStarted) return;
+    if (lobby.players.find((p) => p.id === socket.id)) return; // prevent spamming
+    lobby.players.push({ id: socket.id, name: playerName, isBot: false });
+    socket.join(lobbyID);
+    io.to(lobbyID).emit("updatePlayers", lobby.players);
   });
 
-  socket.on("startGame", (code) => {
-    const room = rooms[code];
-    if(!room) return;
-    if(socket.id !== room.hostId){ socket.emit("errorMessage","Only host can start"); return; }
-    if(room.players.length<2 || room.players.length>4){ socket.emit("errorMessage","Need 2–4 players to start"); return; }
+  socket.on("startGame", ({ lobbyID }) => {
+    const lobby = lobbies[lobbyID];
+    if (!lobby || socket.id !== lobby.hostId || lobby.players.length < 2) return;
+    lobby.gameStarted = true;
 
-    // Fill with bots if <4
-    const botNames = ["[Bot1]","[Bot2]","[Bot3]"];
-    let botIndex = 0;
-    while(room.players.length<4){
-      room.players.push({id:"bot"+botIndex, name:botNames[botIndex]});
-      botIndex++;
+    // fill bots
+    const botNames = ["Bot Alpha", "Bot Bravo", "Bot Charlie", "Bot Delta"];
+    while (lobby.players.length < 4) {
+      const name = botNames.shift();
+      lobby.players.push({ id: `bot_${name}`, name, isBot: true });
     }
 
-    io.to(code).emit("gameStarted", room.players);
+    // initialize resources and countries
+    lobby.players.forEach((p) => {
+      lobby.resources[p.id] = { money: 100, units: { army: 10, navy: 5, air: 5 } };
+    });
+
+    // generate 50 countries
+    lobby.countries = Array.from({ length: 50 }, (_, i) => ({
+      id: i,
+      name: `Country ${i + 1}`,
+      owner: null,
+      stats: {
+        air: Math.floor(Math.random() * 10) + 5,
+        naval: Math.floor(Math.random() * 10) + 5,
+        ground: Math.floor(Math.random() * 10) + 5,
+        resources: Math.floor(Math.random() * 20) + 10,
+      },
+      position: { x: Math.random(), y: Math.random() },
+      isLandLocked: Math.random() < 0.5,
+    }));
+
+    io.to(lobbyID).emit("gameStarted", {
+      players: lobby.players,
+      countries: lobby.countries,
+      currentTurn: lobby.currentTurn,
+      resources: lobby.resources,
+    });
   });
 
-  socket.on("endTurn", (code) => {
-    const room = rooms[code];
-    if(!room) return;
-    const currentPlayer = room.players[room.turn];
-    if(currentPlayer.id !== socket.id) return; // only current player can end turn
+  socket.on("endTurn", ({ lobbyID }) => {
+    const lobby = lobbies[lobbyID];
+    if (!lobby) return;
+    lobby.currentTurn = (lobby.currentTurn + 1) % lobby.players.length;
+    io.to(lobbyID).emit("updateTurn", lobby.currentTurn);
 
-    room.turn = (room.turn + 1) % room.players.length;
-    io.to(code).emit("turnUpdate", room.turn, room.players);
+    // bot moves
+    const player = lobby.players[lobby.currentTurn];
+    if (player.isBot) {
+      // simple bot logic: random attacks or resource allocation
+      setTimeout(() => {
+        io.to(lobbyID).emit("botAction", { botId: player.id });
+        socket.emit("endTurn", { lobbyID }); // move to next turn
+      }, 1000);
+    }
   });
 
   socket.on("disconnect", () => {
-    for(const code in rooms){
-      const room = rooms[code];
-      const index = room.players.findIndex(p=>p.id===socket.id);
-      if(index!==-1){
-        room.players.splice(index,1);
-        // If host left, assign new host
-        if(room.hostId===socket.id && room.players.length>0) room.hostId = room.players[0].id;
-        io.to(code).emit("updatePlayers", room.players, room.hostId);
-        // If room empty, delete
-        if(room.players.length===0) delete rooms[code];
+    Object.keys(lobbies).forEach((lobbyID) => {
+      const lobby = lobbies[lobbyID];
+      const idx = lobby.players.findIndex((p) => p.id === socket.id);
+      if (idx !== -1) {
+        lobby.players.splice(idx, 1);
+        io.to(lobbyID).emit("updatePlayers", lobby.players);
       }
-    }
+      if (lobby.players.length === 0) delete lobbies[lobbyID];
+    });
   });
 });
 
-http.listen(3000, () => console.log("Server running on port 3000"));
+server.listen(3000, () => console.log("Server running on port 3000"));
