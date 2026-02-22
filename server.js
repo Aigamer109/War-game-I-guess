@@ -4,15 +4,11 @@ const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
-});
+const io = new Server(server);
 
 app.use(express.static("public"));
 
+// Rooms object
 let rooms = {};
 
 function generateRoomCode() {
@@ -22,8 +18,13 @@ function generateRoomCode() {
 io.on("connection", (socket) => {
   console.log("Player connected:", socket.id);
 
+  // Store the player's socket id
+  socket.emit("myId", socket.id);
+
+  // CREATE ROOM
   socket.on("createRoom", () => {
     const code = generateRoomCode();
+
     rooms[code] = {
       players: [],
       turn: 0,
@@ -35,29 +36,32 @@ io.on("connection", (socket) => {
 
     socket.emit("roomCreated", code);
     io.to(code).emit("updatePlayers", rooms[code].players);
-    console.log(`Room ${code} created by ${socket.id}`);
   });
 
+  // JOIN ROOM
   socket.on("joinRoom", (code) => {
     if (!rooms[code]) {
       socket.emit("errorMessage", "Room not found.");
       return;
     }
 
-    if (!rooms[code].players.includes(socket.id)) {
+    const room = rooms[code];
+
+    // Prevent duplicate joins
+    if (!room.players.includes(socket.id)) {
+      room.players.push(socket.id);
       socket.join(code);
-      rooms[code].players.push(socket.id);
-      io.to(code).emit("updatePlayers", rooms[code].players);
-      console.log(`${socket.id} joined room ${code}`);
-    } else {
-      socket.emit("errorMessage", "You are already in this room!");
     }
+
+    io.to(code).emit("updatePlayers", room.players);
   });
 
+  // END TURN
   socket.on("endTurn", (code) => {
-    if (!rooms[code]) return;
-
     const room = rooms[code];
+    if (!room) return;
+
+    // only allow the current player to end turn
     if (socket.id !== room.players[room.turn]) {
       socket.emit("errorMessage", "Not your turn!");
       return;
@@ -76,7 +80,6 @@ io.on("connection", (socket) => {
     }
 
     io.to(code).emit("turnUpdate", {
-      turnSocketId: room.players[room.turn],
       turnIndex: room.turn,
       players: room.players
     });
@@ -84,17 +87,18 @@ io.on("connection", (socket) => {
 
   socket.on("disconnect", () => {
     console.log("Player disconnected:", socket.id);
-    // Remove from any rooms
+    // remove from any rooms
     for (let code in rooms) {
-      let index = rooms[code].players.indexOf(socket.id);
-      if (index !== -1) {
-        rooms[code].players.splice(index, 1);
+      const idx = rooms[code].players.indexOf(socket.id);
+      if (idx !== -1) {
+        rooms[code].players.splice(idx, 1);
         io.to(code).emit("updatePlayers", rooms[code].players);
       }
     }
   });
 });
 
-server.listen(process.env.PORT || 3000, () => {
-  console.log("Server running");
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
