@@ -4,7 +4,12 @@ const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
 
 app.use(express.static("public"));
 
@@ -17,9 +22,9 @@ function generateRoomCode() {
 io.on("connection", (socket) => {
   console.log("Player connected:", socket.id);
 
+  // CREATE ROOM
   socket.on("createRoom", () => {
     const code = generateRoomCode();
-
     rooms[code] = {
       players: [],
       turn: 0,
@@ -30,8 +35,10 @@ io.on("connection", (socket) => {
     rooms[code].players.push(socket.id);
 
     socket.emit("roomCreated", code);
+    console.log(`Room ${code} created by ${socket.id}`);
   });
 
+  // JOIN ROOM
   socket.on("joinRoom", (code) => {
     if (!rooms[code]) {
       socket.emit("errorMessage", "Room not found.");
@@ -42,8 +49,10 @@ io.on("connection", (socket) => {
     rooms[code].players.push(socket.id);
 
     io.to(code).emit("updatePlayers", rooms[code].players);
+    console.log(`${socket.id} joined room ${code}`);
   });
 
+  // END TURN
   socket.on("endTurn", (code) => {
     if (!rooms[code]) return;
 
@@ -64,6 +73,7 @@ io.on("connection", (socket) => {
 
   socket.on("disconnect", () => {
     console.log("Player disconnected:", socket.id);
+    // Optionally remove from rooms here if you want
   });
 });
 
