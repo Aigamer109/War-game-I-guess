@@ -1,95 +1,81 @@
 const express = require("express");
-const http = require("http");
-const { Server } = require("socket.io");
-
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server);
+const http = require("http").createServer(app);
+const io = require("socket.io")(http);
 
 app.use(express.static("public"));
 
-let rooms = {};
+const rooms = {}; // { roomCode: { players:[{id,name}], hostId: socketId, turn:0 } }
 
 function generateRoomCode() {
-  return Math.random().toString(36).substring(2, 7).toUpperCase();
+  let code = "";
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  for(let i=0;i<4;i++) code += chars.charAt(Math.floor(Math.random()*chars.length));
+  return code;
 }
 
-function generateBots(room) {
-  const maxPlayers = 4;
-  while (room.players.length < maxPlayers) {
-    const botId = `bot_${Math.random().toString(36).substring(2, 7)}`;
-    room.players.push({ id: botId, name: `[Bot] ${botId}`, country: null });
-  }
-}
-
+// Lobby creation
 io.on("connection", (socket) => {
-  console.log("Player connected:", socket.id);
 
-  socket.on("createRoom", () => {
-    const code = generateRoomCode();
-    rooms[code] = {
-      players: [{ id: socket.id, name: "Host", country: null }],
-      host: socket.id,
-      turnIndex: 0,
-      started: false
-    };
+  socket.on("createRoom", (playerName) => {
+    let code;
+    do { code = generateRoomCode(); } while(rooms[code]);
+    rooms[code] = { players:[{id:socket.id, name:playerName}], hostId: socket.id, turn:0 };
     socket.join(code);
     socket.emit("roomCreated", code);
-    io.to(code).emit("updatePlayers", rooms[code].players);
+    io.to(code).emit("updatePlayers", rooms[code].players, rooms[code].hostId);
   });
 
-  socket.on("joinRoom", (code, name) => {
-    const room = rooms[code];
-    if (!room) {
-      socket.emit("errorMessage", "Room not found.");
-      return;
-    }
-    if (room.started) {
-      socket.emit("errorMessage", "Game already started.");
-      return;
-    }
-    room.players.push({ id: socket.id, name: name || `Player ${room.players.length+1}`, country: null });
+  socket.on("joinRoom", (code, playerName) => {
+    if(!rooms[code]) { socket.emit("errorMessage","Room not found"); return; }
+    if(rooms[code].players.length>=4){ socket.emit("errorMessage","Room full"); return; }
+
+    rooms[code].players.push({id:socket.id, name:playerName});
     socket.join(code);
-    io.to(code).emit("updatePlayers", room.players);
+    io.to(code).emit("updatePlayers", rooms[code].players, rooms[code].hostId);
   });
 
   socket.on("startGame", (code) => {
     const room = rooms[code];
-    if (!room) return;
-    if (socket.id !== room.host) {
-      socket.emit("errorMessage", "Only host can start.");
-      return;
+    if(!room) return;
+    if(socket.id !== room.hostId){ socket.emit("errorMessage","Only host can start"); return; }
+    if(room.players.length<2 || room.players.length>4){ socket.emit("errorMessage","Need 2–4 players to start"); return; }
+
+    // Fill with bots if <4
+    const botNames = ["[Bot1]","[Bot2]","[Bot3]"];
+    let botIndex = 0;
+    while(room.players.length<4){
+      room.players.push({id:"bot"+botIndex, name:botNames[botIndex]});
+      botIndex++;
     }
-    room.started = true;
-
-    // Fill bots
-    generateBots(room);
-
-    // Assign random playable countries to all players
-    const countries = ["USA","Russia","China","UK"];
-    const shuffled = [...countries].sort(() => Math.random() - 0.5);
-    room.players.forEach((p,i)=> p.country = shuffled[i] || null);
 
     io.to(code).emit("gameStarted", room.players);
   });
 
   socket.on("endTurn", (code) => {
     const room = rooms[code];
-    if (!room || !room.started) return;
+    if(!room) return;
+    const currentPlayer = room.players[room.turn];
+    if(currentPlayer.id !== socket.id) return; // only current player can end turn
 
-    const currentPlayer = room.players[room.turnIndex];
-    if (currentPlayer.id !== socket.id && !currentPlayer.id.startsWith("bot_")) return;
-
-    // Advance turn
-    room.turnIndex = (room.turnIndex + 1) % room.players.length;
-    io.to(code).emit("turnUpdate", room.turnIndex, room.players);
+    room.turn = (room.turn + 1) % room.players.length;
+    io.to(code).emit("turnUpdate", room.turn, room.players);
   });
 
   socket.on("disconnect", () => {
-    console.log("Player disconnected:", socket.id);
+    for(const code in rooms){
+      const room = rooms[code];
+      const index = room.players.findIndex(p=>p.id===socket.id);
+      if(index!==-1){
+        room.players.splice(index,1);
+        // If host left, assign new host
+        if(room.hostId===socket.id && room.players.length>0) room.hostId = room.players[0].id;
+        io.to(code).emit("updatePlayers", room.players, room.hostId);
+        // If room empty, delete
+        if(room.players.length===0) delete rooms[code];
+      }
+    }
   });
 });
 
-server.listen(process.env.PORT || 3000, () => {
-  console.log("Server running");
-});
+http.listen(3000, () => console.log("Server running on port 3000"));
