@@ -1,210 +1,170 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>World Strategy Game</title>
-  <style>
-    body { margin:0; font-family:sans-serif; background:#87ceeb; }
-    #menu, #game { position:absolute; top:0; left:0; width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; }
-    #game { display:none; }
-    #players { margin-bottom:10px; }
-    #turnBox { background: #ccc; padding:10px; font-weight:bold; margin-bottom:5px; }
-    #mapCanvas { border:1px solid #333; background:#4db8ff; cursor:pointer; }
-    .countryStats { position:absolute; background:#eee; padding:5px; border:1px solid #333; display:none; z-index:1000; }
-    button { margin:5px; padding:10px; }
-    input { padding:5px; margin:5px; }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Grand Strategy Game</title>
+<style>
+  body { margin: 0; font-family: sans-serif; background: #1e1e2f; color: #fff; }
+  #lobby, #game { display: none; }
+  #playerList { list-style: none; padding: 0; }
+  #map { width: 100vw; height: 80vh; background: #3a6ea5; display: block; }
+  .country { cursor: pointer; }
+  .statsBox { position: absolute; background: rgba(200,200,200,0.9); color: #000; padding: 5px; border-radius: 5px; display: none; }
+  #turnIndicator { background: #888; padding: 10px; text-align: center; margin-bottom: 5px; }
+</style>
 </head>
 <body>
-  <div id="menu">
-    <h1>World Strategy Game</h1>
-    <input id="nameInput" placeholder="Enter your name" maxlength="12">
-    <button id="hostBtn">Host Lobby</button>
-    <input id="joinInput" placeholder="Enter Room Code">
-    <button id="joinBtn">Join Lobby</button>
-    <div id="lobbyControls" style="margin-top:10px;">
-      <button id="startBtn" style="display:none;">Start Game</button>
-    </div>
-    <div id="status"></div>
-    <div id="players"></div>
-  </div>
 
-  <div id="game">
-    <div id="players"></div>
-    <div id="turnBox">Waiting...</div>
-    <canvas id="mapCanvas" width="900" height="600"></canvas>
-    <button id="endTurnBtn">End Turn</button>
-  </div>
+<div id="menu">
+  <h1>Grand Strategy Game</h1>
+  <input id="playerName" placeholder="Enter your name" />
+  <button id="createBtn">Create Lobby</button>
+  <input id="lobbyIDInput" placeholder="Lobby ID" />
+  <button id="joinBtn">Join Lobby</button>
+</div>
 
-  <div id="statsPopup" class="countryStats"></div>
+<div id="lobby">
+  <h2>Lobby <span id="hostLabel"></span></h2>
+  <ul id="playerList"></ul>
+  <button id="startBtn">Start Game</button>
+</div>
 
-  <script src="/socket.io/socket.io.js"></script>
-  <script>
-    const socket = io();
-    let currentRoom = null;
-    let players = [];
-    let turnIndex = 0;
-    let myId = null;
+<div id="game">
+  <div id="turnIndicator">Current Turn: </div>
+  <canvas id="map"></canvas>
+  <div class="statsBox" id="statsBox"></div>
+  <button id="endTurnBtn">End Turn</button>
+</div>
 
-    // Map setup
-    const canvas = document.getElementById("mapCanvas");
-    const ctx = canvas.getContext("2d");
-    let countries = [];
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+let lobbyID = null;
+let playerID = null;
+let players = [];
+let countries = [];
+let currentTurn = 0;
+let resources = {};
 
-    function randomColor() { return `hsl(${Math.random()*360},50%,60%)`; }
-    function randomInt(min,max){ return Math.floor(Math.random()*(max-min+1)+min); }
+const menuDiv = document.getElementById("menu");
+const lobbyDiv = document.getElementById("lobby");
+const gameDiv = document.getElementById("game");
+const playerList = document.getElementById("playerList");
+const hostLabel = document.getElementById("hostLabel");
+const turnIndicator = document.getElementById("turnIndicator");
+const statsBox = document.getElementById("statsBox");
+const mapCanvas = document.getElementById("map");
+const ctx = mapCanvas.getContext("2d");
 
-    function generateCountries() {
-      countries = [];
-      const names = ["Argentina","Brazil","Canada","Chile","France","Germany","Italy","Japan","Mexico","Norway",
-                     "Spain","Sweden","UK","USA","Russia","China","India","Egypt","Nigeria","SouthAfrica",
-                     "SaudiArabia","Turkey","Thailand","Vietnam","Indonesia","Philippines","Pakistan","Ukraine",
-                     "Poland","Greece","Portugal","Netherlands","Belgium","Czechia","Hungary","Romania","Finland",
-                     "Iceland","NewZealand","Australia","Colombia","Peru","Venezuela","Ethiopia","Kenya","Morocco",
-                     "Algeria","Libya","Sudan","Syria","Iran"];
-      for(let i=0;i<50;i++){
-        const poly = [];
-        const cx = randomInt(50,850);
-        const cy = randomInt(50,550);
-        const verts = randomInt(5,8);
-        for(let j=0;j<verts;j++){
-          const angle = (j/verts)*2*Math.PI;
-          const r = randomInt(20,50);
-          poly.push({x:cx+r*Math.cos(angle), y:cy+r*Math.sin(angle)});
-        }
-        countries.push({
-          name: names[i]||`Country${i}`,
-          polygon: poly,
-          color: randomColor(),
-          owner: null,
-          stats: {
-            air: randomInt(10,100),
-            naval: randomInt(0,100),
-            ground: randomInt(10,100),
-            resources: randomInt(50,200)
-          }
-        });
-        // Landlocked adjustment
-        if(cx<150 || cx>750) countries[i].stats.naval = 0;
-      }
+document.getElementById("createBtn").onclick = () => {
+  const name = document.getElementById("playerName").value || "Player";
+  socket.emit("createLobby", { playerName: name });
+};
+
+document.getElementById("joinBtn").onclick = () => {
+  const name = document.getElementById("playerName").value || "Player";
+  const inputID = document.getElementById("lobbyIDInput").value;
+  socket.emit("joinLobby", { lobbyID: inputID, playerName: name });
+};
+
+document.getElementById("startBtn").onclick = () => {
+  socket.emit("startGame", { lobbyID });
+};
+
+document.getElementById("endTurnBtn").onclick = () => {
+  socket.emit("endTurn", { lobbyID });
+};
+
+// Lobby updates
+socket.on("lobbyCreated", (data) => {
+  lobbyID = data.lobbyID;
+  menuDiv.style.display = "none";
+  lobbyDiv.style.display = "block";
+});
+
+socket.on("updatePlayers", (plrs) => {
+  players = plrs;
+  playerList.innerHTML = "";
+  plrs.forEach((p) => {
+    const li = document.createElement("li");
+    li.textContent = p.name + (p.id === players[0].id ? " [Host]" : "");
+    playerList.appendChild(li);
+  });
+  // host button visibility
+  document.getElementById("startBtn").style.display = (players[0].id === socket.id && players.length >= 2) ? "block" : "none";
+});
+
+// Game started
+socket.on("gameStarted", (data) => {
+  lobbyDiv.style.display = "none";
+  gameDiv.style.display = "block";
+  players = data.players;
+  countries = data.countries;
+  resources = data.resources;
+  currentTurn = data.currentTurn;
+  drawMap();
+  updateTurnIndicator();
+});
+
+// Turn updates
+socket.on("updateTurn", (turn) => {
+  currentTurn = turn;
+  updateTurnIndicator();
+});
+
+function updateTurnIndicator() {
+  const player = players[currentTurn];
+  turnIndicator.textContent = `Current Turn: ${player.name} ${player.isBot ? "[Bot]" : ""}`;
+}
+
+// MAP
+mapCanvas.width = window.innerWidth;
+mapCanvas.height = window.innerHeight * 0.8;
+
+function drawMap() {
+  ctx.clearRect(0, 0, mapCanvas.width, mapCanvas.height);
+  countries.forEach((c) => {
+    const x = c.position.x * mapCanvas.width;
+    const y = c.position.y * mapCanvas.height;
+    c.screenX = x;
+    c.screenY = y;
+    ctx.fillStyle = c.owner ? c.owner.color : `hsl(${Math.random()*360},50%,50%)`;
+    ctx.beginPath();
+    ctx.arc(x, y, 20, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = "#000";
+    ctx.fillText(c.name, x-15, y-25);
+  });
+}
+
+mapCanvas.onclick = (e) => {
+  const rect = mapCanvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  for (const c of countries) {
+    const dx = mx - c.screenX;
+    const dy = my - c.screenY;
+    if (Math.sqrt(dx*dx + dy*dy) < 20) {
+      showStats(c, mx, my);
+      break;
     }
+  }
+};
 
-    function drawMap() {
-      ctx.clearRect(0,0,canvas.width,canvas.height);
-      countries.forEach(c=>{
-        ctx.fillStyle = c.color;
-        ctx.beginPath();
-        c.polygon.forEach((p,i)=> { if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
-        ctx.closePath();
-        ctx.fill();
-        ctx.strokeStyle="#333";
-        ctx.stroke();
-      });
-    }
-
-    // Handle country clicks
-    canvas.addEventListener("click", e=>{
-      const rect = canvas.getBoundingClientRect();
-      const mx = e.clientX-rect.left;
-      const my = e.clientY-rect.top;
-      countries.forEach(c=>{
-        ctx.beginPath();
-        c.polygon.forEach((p,i)=> { if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
-        ctx.closePath();
-        if(ctx.isPointInPath(mx,my)){
-          const stats = c.stats;
-          const popup = document.getElementById("statsPopup");
-          popup.style.left = (mx+10)+"px";
-          popup.style.top = (my+10)+"px";
-          popup.innerHTML = `<b>${c.name}</b><br>Air: ${stats.air}<br>Naval: ${stats.naval}<br>Ground: ${stats.ground}<br>Resources: ${stats.resources}`;
-          popup.style.display="block";
-
-          // Capture only for active player
-          const p = players[turnIndex];
-          if(p && p.id === myId){
-            c.owner = p.name;
-            c.color = `hsl(${(turnIndex*90)%360},70%,50%)`; // unique color per player
-            drawMap();
-          }
-        }
-      });
-    });
-
-    // Hide popup on move
-    canvas.addEventListener("mousemove", e=>{
-      const popup = document.getElementById("statsPopup");
-      popup.style.display="none";
-    });
-
-    // Lobby buttons
-    document.getElementById("hostBtn").onclick = ()=>{
-      const name = document.getElementById("nameInput").value.trim();
-      if(!name) return alert("Enter a name first!");
-      myId = socket.id;
-      socket.emit("createRoom", name);
-    };
-
-    document.getElementById("joinBtn").onclick = ()=>{
-      const name = document.getElementById("nameInput").value.trim();
-      const code = document.getElementById("joinInput").value.trim().toUpperCase();
-      if(!name) return alert("Enter a name first!");
-      if(!code) return alert("Enter a room code!");
-      socket.emit("joinRoom", code, name);
-      currentRoom = code;
-      myId = socket.id;
-    };
-
-    document.getElementById("startBtn").onclick = ()=>{
-      if(currentRoom) socket.emit("startGame", currentRoom);
-    };
-
-    document.getElementById("endTurnBtn").onclick = ()=>{
-      if(currentRoom) socket.emit("endTurn", currentRoom);
-    };
-
-    // Socket events
-    socket.on("roomCreated",(code)=>{
-      currentRoom = code;
-      document.getElementById("status").innerText = "Room Code: "+code+" (Host)";
-      document.getElementById("startBtn").style.display = "inline-block";
-    });
-
-    socket.on("updatePlayers",(p,hostId)=>{
-      players = p;
-      const playersDiv = document.getElementById("players");
-      playersDiv.innerHTML="";
-      p.forEach(pl=>{
-        const isHost = pl.id === hostId ? " (Host)" : "";
-        playersDiv.innerHTML += `<div>${pl.name}${isHost}</div>`;
-      });
-      // Enable start button only if 2-4 players
-      const startBtn = document.getElementById("startBtn");
-      if(socket.id === hostId && p.length>=2 && p.length<=4){
-        startBtn.disabled = false;
-      } else startBtn.disabled = true;
-    });
-
-    socket.on("gameStarted",(p)=>{
-      players = p;
-      document.getElementById("menu").style.display="none";
-      document.getElementById("game").style.display="flex";
-      generateCountries();
-      drawMap();
-      updateTurnBox();
-    });
-
-    socket.on("turnUpdate",(index,ps)=>{
-      turnIndex = index;
-      players = ps;
-      updateTurnBox();
-    });
-
-    function updateTurnBox(){
-      const tb = document.getElementById("turnBox");
-      const p = players[turnIndex];
-      tb.innerText = p ? `${p.name}'s Turn` : "Waiting...";
-    }
-
-    socket.on("errorMessage",(msg)=>{ alert(msg); });
-  </script>
+function showStats(c, x, y) {
+  statsBox.style.display = "block";
+  statsBox.style.left = x + "px";
+  statsBox.style.top = y + "px";
+  statsBox.innerHTML = `
+    <b>${c.name}</b><br>
+    Owner: ${c.owner ? c.owner.name : "None"}<br>
+    Air: ${c.stats.air}<br>
+    Naval: ${c.stats.naval}<br>
+    Ground: ${c.stats.ground}<br>
+    Resources: ${c.stats.resources}
+  `;
+}
+</script>
 </body>
 </html>
