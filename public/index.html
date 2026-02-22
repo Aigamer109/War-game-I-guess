@@ -2,6 +2,10 @@
 <html>
 <head>
   <title>World Strategy Game</title>
+  <style>
+    button { margin: 5px; padding: 10px; font-size: 16px; }
+    #players { margin-top: 10px; }
+  </style>
 </head>
 <body>
   <h1>World Strategy Lobby</h1>
@@ -13,22 +17,26 @@
   <button onclick="joinRoom()">Join Room</button>
 
   <h2 id="status"></h2>
-  <h3 id="players">Players: </h3>
-  <h3 id="turnInfo"></h3>
+  <h3 id="players"></h3>
 
-  <button id="endTurnBtn" onclick="endTurn()">End Turn</button>
+  <button id="startBtn" onclick="startGame()" style="display:none;">Start Game</button>
+  <br><br>
+
+  <button id="endTurnBtn" onclick="endTurn()" disabled>End Turn</button>
+  <h3 id="turnInfo"></h3>
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const socket = io();
     let currentRoom = null;
     let myId = null;
+    let myIndex = null;
+    let isHost = false;
+    let countries = {};
 
     socket.on("myId", (id) => { myId = id; });
 
-    function createRoom() {
-      socket.emit("createRoom");
-    }
+    function createRoom() { socket.emit("createRoom"); }
 
     function joinRoom() {
       const code = document.getElementById("roomInput").value.toUpperCase();
@@ -36,55 +44,59 @@
       currentRoom = code;
     }
 
-    function endTurn() {
-      if (currentRoom) {
-        socket.emit("endTurn", currentRoom);
-      }
-    }
+    function startGame() { if (currentRoom) socket.emit("startGame", currentRoom); }
+    function endTurn() { if (currentRoom) socket.emit("endTurn", currentRoom); }
 
-    // Room created
     socket.on("roomCreated", (code) => {
       currentRoom = code;
       document.getElementById("status").innerText = "Room Code: " + code;
     });
 
-    // Update player list
-    socket.on("updatePlayers", (players) => {
-      let list = players.map((p,i) => {
-        let name = "Player " + (i+1);
-        return (p===myId ? name + " (You)" : name);
+    socket.on("updatePlayers", (room) => {
+      myIndex = room.players.indexOf(myId);
+      isHost = (myId === room.host);
+      countries = room.countries || {};
+
+      let list = room.players.map((p,i) => {
+        const c = countries[p] ? countries[p].flag : "";
+        let name = p.startsWith("BOT_") ? `[Bot ${i+1}]` : `Player ${i+1}`;
+        if (p === room.host) name += " (Host)";
+        if (p === myId && !p.startsWith("BOT_")) name += " (You)";
+        return `${c} ${name}`;
       });
+
       document.getElementById("players").innerText = "Players: " + list.join(", ");
+      document.getElementById("startBtn").style.display = (isHost && !room.started) ? "inline-block" : "none";
     });
 
-    // Turn update
-    socket.on("turnUpdate", (data) => {
-      const { turnIndex, players } = data;
-      const turnSocketId = players[turnIndex];
-      let turnName = "Player " + (turnIndex + 1);
+    socket.on("gameStarted", (room) => {
+      document.getElementById("status").innerText = "Game Started!";
+      document.getElementById("startBtn").style.display = "none";
+      document.getElementById("endTurnBtn").disabled = false;
+      countries = room.countries;
+    });
 
-      if (turnSocketId === myId) {
-        document.getElementById("turnInfo").innerText = `🟢 Your turn!`;
+    socket.on("turnUpdate", (data) => {
+      const { turnIndex, players, countries: roomCountries } = data;
+      countries = roomCountries;
+
+      myIndex = players.indexOf(myId);
+      const currentPlayer = players[turnIndex].startsWith("BOT_")
+        ? `[Bot ${turnIndex + 1}]`
+        : `Player ${turnIndex + 1}`;
+      const flag = roomCountries[players[turnIndex]] ? roomCountries[players[turnIndex]].flag : "";
+
+      if (myIndex === turnIndex) {
+        document.getElementById("turnInfo").innerText = `🟢 Your turn (${flag})!`;
         document.getElementById("endTurnBtn").disabled = false;
       } else {
-        document.getElementById("turnInfo").innerText = `⏳ ${turnName}'s turn`;
+        document.getElementById("turnInfo").innerText = `⏳ ${flag} ${currentPlayer}'s turn`;
         document.getElementById("endTurnBtn").disabled = true;
       }
-
-      let list = players.map((p,i) => {
-        let name = "Player " + (i+1);
-        return (p===myId ? name + " (You)" : name);
-      });
-      document.getElementById("players").innerText = "Players: " + list.join(", ");
     });
 
-    socket.on("worldPeaceVote", () => {
-      alert("World Peace Vote Triggered!");
-    });
-
-    socket.on("errorMessage", (msg) => {
-      alert(msg);
-    });
+    socket.on("worldPeaceVote", () => { alert("🌍 World Peace Vote Triggered!"); });
+    socket.on("errorMessage", (msg) => { alert(msg); });
   </script>
 </body>
 </html>
