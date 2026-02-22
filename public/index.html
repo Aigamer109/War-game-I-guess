@@ -3,23 +3,29 @@
 <head>
   <title>World Strategy Game</title>
   <style>
-    body { margin:0; font-family: sans-serif; background:#87ceeb; }
+    body { margin:0; font-family:sans-serif; background:#87ceeb; }
     #menu, #game { position:absolute; top:0; left:0; width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; }
     #game { display:none; }
     #players { margin-bottom:10px; }
     #turnBox { background: #ccc; padding:10px; font-weight:bold; margin-bottom:5px; }
-    #mapCanvas { border:1px solid #333; background:#4db8ff; }
+    #mapCanvas { border:1px solid #333; background:#4db8ff; cursor:pointer; }
     .countryStats { position:absolute; background:#eee; padding:5px; border:1px solid #333; display:none; z-index:1000; }
     button { margin:5px; padding:10px; }
+    input { padding:5px; margin:5px; }
   </style>
 </head>
 <body>
   <div id="menu">
     <h1>World Strategy Game</h1>
+    <input id="nameInput" placeholder="Enter your name" maxlength="12">
     <button id="hostBtn">Host Lobby</button>
     <input id="joinInput" placeholder="Enter Room Code">
     <button id="joinBtn">Join Lobby</button>
+    <div id="lobbyControls" style="margin-top:10px;">
+      <button id="startBtn" style="display:none;">Start Game</button>
+    </div>
     <div id="status"></div>
+    <div id="players"></div>
   </div>
 
   <div id="game">
@@ -39,7 +45,7 @@
     let turnIndex = 0;
     let myId = null;
 
-    // Map
+    // Map setup
     const canvas = document.getElementById("mapCanvas");
     const ctx = canvas.getContext("2d");
     let countries = [];
@@ -77,7 +83,7 @@
             resources: randomInt(50,200)
           }
         });
-        // Landlocked adjustment (simplified)
+        // Landlocked adjustment
         if(cx<150 || cx>750) countries[i].stats.naval = 0;
       }
     }
@@ -95,6 +101,7 @@
       });
     }
 
+    // Handle country clicks
     canvas.addEventListener("click", e=>{
       const rect = canvas.getBoundingClientRect();
       const mx = e.clientX-rect.left;
@@ -111,48 +118,69 @@
           popup.innerHTML = `<b>${c.name}</b><br>Air: ${stats.air}<br>Naval: ${stats.naval}<br>Ground: ${stats.ground}<br>Resources: ${stats.resources}`;
           popup.style.display="block";
 
-          // Capture example (only for active player)
-          if(players[turnIndex] && !players[turnIndex].id.startsWith("bot_")){
-            c.owner = players[turnIndex].country;
-            c.color = turnIndex==0 ? "#ff0000" : turnIndex==1 ? "#00ff00" : turnIndex==2 ? "#0000ff" : "#ffff00";
+          // Capture only for active player
+          const p = players[turnIndex];
+          if(p && p.id === myId){
+            c.owner = p.name;
+            c.color = `hsl(${(turnIndex*90)%360},70%,50%)`; // unique color per player
             drawMap();
           }
         }
       });
     });
 
-    // Hide popup when clicking outside
+    // Hide popup on move
     canvas.addEventListener("mousemove", e=>{
       const popup = document.getElementById("statsPopup");
       popup.style.display="none";
     });
 
+    // Lobby buttons
     document.getElementById("hostBtn").onclick = ()=>{
-      socket.emit("createRoom");
+      const name = document.getElementById("nameInput").value.trim();
+      if(!name) return alert("Enter a name first!");
+      myId = socket.id;
+      socket.emit("createRoom", name);
     };
+
     document.getElementById("joinBtn").onclick = ()=>{
-      const code = document.getElementById("joinInput").value;
-      socket.emit("joinRoom", code);
+      const name = document.getElementById("nameInput").value.trim();
+      const code = document.getElementById("joinInput").value.trim().toUpperCase();
+      if(!name) return alert("Enter a name first!");
+      if(!code) return alert("Enter a room code!");
+      socket.emit("joinRoom", code, name);
       currentRoom = code;
+      myId = socket.id;
+    };
+
+    document.getElementById("startBtn").onclick = ()=>{
+      if(currentRoom) socket.emit("startGame", currentRoom);
     };
 
     document.getElementById("endTurnBtn").onclick = ()=>{
       if(currentRoom) socket.emit("endTurn", currentRoom);
     };
 
+    // Socket events
     socket.on("roomCreated",(code)=>{
       currentRoom = code;
-      myId = socket.id;
       document.getElementById("status").innerText = "Room Code: "+code+" (Host)";
+      document.getElementById("startBtn").style.display = "inline-block";
     });
 
-    socket.on("updatePlayers",(p)=>{
+    socket.on("updatePlayers",(p,hostId)=>{
       players = p;
       const playersDiv = document.getElementById("players");
       playersDiv.innerHTML="";
       p.forEach(pl=>{
-        playersDiv.innerHTML += `<div>${pl.name} ${pl.country?`(${pl.country})`:''}</div>`;
+        const isHost = pl.id === hostId ? " (Host)" : "";
+        playersDiv.innerHTML += `<div>${pl.name}${isHost}</div>`;
       });
+      // Enable start button only if 2-4 players
+      const startBtn = document.getElementById("startBtn");
+      if(socket.id === hostId && p.length>=2 && p.length<=4){
+        startBtn.disabled = false;
+      } else startBtn.disabled = true;
     });
 
     socket.on("gameStarted",(p)=>{
@@ -173,8 +201,10 @@
     function updateTurnBox(){
       const tb = document.getElementById("turnBox");
       const p = players[turnIndex];
-      tb.innerText = p ? `${p.name}'s Turn (${p.country})` : "Waiting...";
+      tb.innerText = p ? `${p.name}'s Turn` : "Waiting...";
     }
+
+    socket.on("errorMessage",(msg)=>{ alert(msg); });
   </script>
 </body>
 </html>
