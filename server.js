@@ -8,8 +8,8 @@ const io = new Server(server);
 
 app.use(express.static("public"));
 
-// Rooms object
 let rooms = {};
+const MAX_PLAYERS = 4;
 
 function generateRoomCode() {
   return Math.random().toString(36).substring(2, 7).toUpperCase();
@@ -17,58 +17,63 @@ function generateRoomCode() {
 
 io.on("connection", (socket) => {
   console.log("Player connected:", socket.id);
-
-  // Store the player's socket id
   socket.emit("myId", socket.id);
 
-  // CREATE ROOM
   socket.on("createRoom", () => {
     const code = generateRoomCode();
 
     rooms[code] = {
-      players: [],
+      host: socket.id,
+      players: [socket.id],
       turn: 0,
-      cycleCount: 0
+      cycleCount: 0,
+      started: false
     };
 
     socket.join(code);
-    rooms[code].players.push(socket.id);
-
     socket.emit("roomCreated", code);
-    io.to(code).emit("updatePlayers", rooms[code].players);
+    io.to(code).emit("updatePlayers", rooms[code]);
   });
 
-  // JOIN ROOM
   socket.on("joinRoom", (code) => {
     if (!rooms[code]) {
       socket.emit("errorMessage", "Room not found.");
       return;
     }
 
-    const room = rooms[code];
-
-    // Prevent duplicate joins
-    if (!room.players.includes(socket.id)) {
-      room.players.push(socket.id);
-      socket.join(code);
+    if (!rooms[code].players.includes(socket.id)) {
+      rooms[code].players.push(socket.id);
     }
 
-    io.to(code).emit("updatePlayers", room.players);
+    socket.join(code);
+    io.to(code).emit("updatePlayers", rooms[code]);
   });
 
-  // END TURN
-  socket.on("endTurn", (code) => {
+  socket.on("startGame", (code) => {
+    if (!rooms[code]) return;
     const room = rooms[code];
-    if (!room) return;
 
-    // only allow the current player to end turn
-    if (socket.id !== room.players[room.turn]) {
-      socket.emit("errorMessage", "Not your turn!");
+    if (socket.id !== room.host) {
+      socket.emit("errorMessage", "Only the host can start the game!");
       return;
     }
 
-    room.turn++;
+    // Fill empty slots with AI players
+    while (room.players.length < MAX_PLAYERS) {
+      room.players.push("AI_" + (room.players.length + 1));
+    }
 
+    room.started = true;
+    io.to(code).emit("gameStarted", room);
+    io.to(code).emit("turnUpdate", { turnIndex: room.turn, players: room.players });
+  });
+
+  socket.on("endTurn", (code) => {
+    if (!rooms[code]) return;
+    const room = rooms[code];
+    if (!room.started) return;
+
+    room.turn++;
     if (room.turn >= room.players.length) {
       room.turn = 0;
       room.cycleCount++;
@@ -79,26 +84,26 @@ io.on("connection", (socket) => {
       }
     }
 
-    io.to(code).emit("turnUpdate", {
-      turnIndex: room.turn,
-      players: room.players
-    });
+    io.to(code).emit("turnUpdate", { turnIndex: room.turn, players: room.players });
   });
 
   socket.on("disconnect", () => {
     console.log("Player disconnected:", socket.id);
-    // remove from any rooms
     for (let code in rooms) {
-      const idx = rooms[code].players.indexOf(socket.id);
-      if (idx !== -1) {
-        rooms[code].players.splice(idx, 1);
-        io.to(code).emit("updatePlayers", rooms[code].players);
+      const room = rooms[code];
+      room.players = room.players.filter(p => p !== socket.id);
+
+      if (room.host === socket.id && room.players.length > 0) {
+        room.host = room.players[0]; // assign new host
       }
+
+      if (room.players.length === 0) delete rooms[code];
+
+      else io.to(code).emit("updatePlayers", room);
     }
   });
 });
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+server.listen(process.env.PORT || 3000, () => {
+  console.log("Server running on port 3000");
 });
