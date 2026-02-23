@@ -191,10 +191,70 @@ setInterval(() => {
         lobby.explosions = lobby.explosions.filter(e => e.radius < e.maxRadius);
 
         io.to(lobby.id).emit("gameState", lobby);
-    });
 
 }, 1000 / 30);
+// AIR MOVEMENT
+lobby.airUnits.forEach(unit => {
 
+    if (unit.state === "takingoff") {
+        unit.scale += 0.02;
+        if (unit.scale >= 1) unit.state = "flying";
+    }
+
+    else if (unit.state === "flying") {
+        const target = lobby.territories[unit.target];
+        const dx = target.center.x - unit.x;
+        const dy = target.center.y - unit.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+
+        if (dist < 10) {
+
+            if (unit.type === "bomber" && unit.hasNuke) {
+                lobby.bombs.push({
+                    x: unit.x,
+                    y: unit.y,
+                    target: unit.target,
+                    vy: 4
+                });
+                unit.hasNuke = false;
+            }
+
+            unit.state = "returning";
+        } else {
+            unit.x += (dx/dist) * (unit.speed/30);
+            unit.y += (dy/dist) * (unit.speed/30);
+        }
+    }
+
+    else if (unit.state === "returning") {
+        const home = lobby.territories[unit.home];
+        const dx = home.center.x - unit.x;
+        const dy = home.center.y - unit.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+
+        if (dist < 10) unit.state = "landing";
+        else {
+            unit.x += (dx/dist) * (unit.speed/30);
+            unit.y += (dy/dist) * (unit.speed/30);
+        }
+    }
+
+    else if (unit.state === "landing") {
+        unit.scale -= 0.02;
+        if (unit.scale <= 0.2) unit.state = "idle";
+    }
+lobby.bombs.forEach(bomb => {
+    bomb.y += bomb.vy;
+
+    const territory = lobby.territories[bomb.target];
+
+    if (bomb.y >= territory.center.y) {
+        explodeTerritory(lobby, bomb.target);
+        bomb.done = true;
+    }
+
+lobby.bombs = lobby.bombs.filter(b => !b.done);
+});
 /* =============================
    SOCKET EVENTS
 ============================= */
@@ -229,25 +289,35 @@ io.on("connection", socket => {
         }
     });
 
-    socket.on("launchNuke", ({ lobbyId, territoryId }) => {
-        const lobby = lobbies[lobbyId];
-        const player = lobby.players[socket.id];
+    socket.on("launchNuke", ({ lobbyId, territoryId, fromTerritory }) => {
 
-        if (player.resources < 3000 || player.money < 1000) return;
-        if (!isWithinRange(lobby, socket.id, territoryId)) return;
+    const lobby = lobbies[lobbyId];
+    const player = lobby.players[socket.id];
 
-        player.resources -= 3000;
-        player.money -= 1000;
+    if (!player) return;
+    if (player.resources < 3000 || player.money < 1000) return;
+    if (!isWithinRange(lobby, socket.id, territoryId)) return;
 
-        explodeTerritory(lobby, territoryId);
-    });
+    player.resources -= 3000;
+    player.money -= 1000;
 
-    socket.on("disconnect", () => {
-        Object.values(lobbies).forEach(lobby => {
-            delete lobby.players[socket.id];
-        });
-    });
+    const start = lobby.territories[fromTerritory];
 
+    const bomber = {
+        id: uuidv4(),
+        type: "bomber",
+        owner: socket.id,
+        x: start.center.x,
+        y: start.center.y,
+        home: fromTerritory,
+        target: territoryId,
+        state: "takingoff",
+        scale: 0.2,
+        speed: 25,
+        hasNuke: true
+    };
+
+    lobby.airUnits.push(bomber);
 });
 
 server.listen(3000, () => {
