@@ -1,129 +1,21 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>Grand Strategy War Game</title>
-<style>
-body { margin:0; overflow:hidden; font-family:sans-serif; }
-#menu, #gameUI { position:absolute; top:10px; left:10px; background:#ccc; padding:10px; border-radius:5px; }
-canvas { background:#87cefa; display:block; margin:0 auto; }
-#countryStats { position:absolute; background:#fff; padding:5px; border:1px solid #000; display:none; }
-#unitMenu { position:absolute; background:#eee; padding:5px; border:1px solid #000; display:none; }
-button { margin:2px; }
-</style>
+    <title>Pixel Wars</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
 <div id="menu">
-  Name: <input id="playerName" placeholder="Player"><br>
-  <button id="createBtn">Create Lobby</button>
-  <input id="joinCode" placeholder="Lobby Code">
-  <button id="joinBtn">Join Lobby</button>
+    <input id="name" placeholder="Enter name">
+    <input id="lobbyId" placeholder="Lobby ID">
+    <button id="host">Host Lobby</button>
+    <button id="join">Join Lobby</button>
 </div>
-<div id="gameUI" style="display:none;">
-  Current Turn: <span id="currentPlayer"></span>
-  <button id="endTurnBtn">End Turn</button>
-</div>
-<div id="countryStats"></div>
-<div id="unitMenu"></div>
-<canvas id="mapCanvas" width="800" height="600"></canvas>
+
+<canvas id="game" width="1000" height="600"></canvas>
+
 <script src="/socket.io/socket.io.js"></script>
-<script>
-const socket = io();
-let lobbyCode, gameData, playerId = null;
-const canvas = document.getElementById("mapCanvas");
-const ctx = canvas.getContext("2d");
-const countryStatsDiv = document.getElementById("countryStats");
-const unitMenuDiv = document.getElementById("unitMenu");
-
-document.getElementById("createBtn").onclick = () => {
-  playerId = socket.id;
-  const name = document.getElementById("playerName").value || "Player";
-  socket.emit("createLobby", { playerName: name });
-};
-
-document.getElementById("joinBtn").onclick = () => {
-  playerId = socket.id;
-  const name = document.getElementById("playerName").value || "Player";
-  const code = document.getElementById("joinCode").value.toUpperCase();
-  socket.emit("joinLobby", { lobbyCode: code, playerName: name });
-};
-
-document.getElementById("endTurnBtn").onclick = () => {
-  socket.emit("endTurn", { lobbyCode });
-};
-
-socket.on("lobbyCreated", data => {
-  lobbyCode = data.lobbyCode;
-  alert(`Lobby Code: ${lobbyCode}`);
-});
-
-socket.on("updateLobby", data => {
-  gameData = data;
-  document.getElementById("menu").style.display = "block";
-  console.log("Lobby updated", data);
-});
-
-socket.on("gameStarted", data => {
-  gameData = data;
-  document.getElementById("menu").style.display = "none";
-  document.getElementById("gameUI").style.display = "block";
-  drawMap();
-});
-
-socket.on("updateGame", data => {
-  gameData = data;
-  drawMap();
-  document.getElementById("currentPlayer").innerText = gameData.players[gameData.turnIndex].name;
-});
-
-function drawMap() {
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  gameData.countries.forEach(c => {
-    ctx.beginPath();
-    ctx.moveTo(c.shape[0].x, c.shape[0].y);
-    c.shape.forEach(p => ctx.lineTo(p.x, p.y));
-    ctx.closePath();
-    ctx.fillStyle = c.color;
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = "#000";
-    const center = c.shape.reduce((acc,p)=>({x:acc.x+p.x, y:acc.y+p.y}), {x:0,y:0});
-    center.x/=c.shape.length; center.y/=c.shape.length;
-    ctx.fillText(c.name, center.x-10, center.y);
-  });
-}
-
-canvas.addEventListener("click", (e) => {
-  const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left, y = e.clientY - rect.top;
-  for(const c of gameData.countries){
-    if(pointInPolygon({x,y}, c.shape)){
-      showCountryStats(c, x, y);
-      break;
-    }
-  }
-});
-
-function pointInPolygon(point, vs) {
-  let x = point.x, y = point.y;
-  let inside = false;
-  for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
-    let xi = vs[i].x, yi = vs[i].y;
-    let xj = vs[j].x, yj = vs[j].y;
-    let intersect = ((yi > y) != (yj > y)) &&
-      (x < (xj - xi) * (y - yi) / (yj - yi + 0.00001) + xi);
-    if (intersect) inside = !inside;
-  }
-  return inside;
-}
-
-function showCountryStats(c, x, y) {
-  countryStatsDiv.style.display="block";
-  countryStatsDiv.style.left=x+"px";
-  countryStatsDiv.style.top=y+"px";
-  countryStatsDiv.innerHTML=`<b>${c.name}</b><br>
-  Air: ${c.stats.air}<br>Ground: ${c.stats.ground}<br>Naval: ${c.stats.naval}<br>Resources: ${c.stats.resources}`;
-}
-</script>
+<script src="client.js"></script>
 </body>
 </html>
