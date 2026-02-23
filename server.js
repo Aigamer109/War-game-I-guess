@@ -9,7 +9,8 @@ const io = new Server(server);
 
 app.use(express.static("public"));
 
-const lobbies = {};
+const lobbies = {airUnits: [],
+bombs: [],};
 
 /* =============================
    TERRITORY GENERATION
