@@ -1,0 +1,100 @@
+ (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
+diff --git a/public/index.html b/public/index.html
+index 858065bf3f2fe0c950f74c9e4941c86741949810..74e7c71e36d1ff5b94b7d0f8766fe383c0d5880e 100644
+--- a/public/index.html
++++ b/public/index.html
+@@ -1,21 +1,73 @@
+ <!DOCTYPE html>
+-<html>
+-<head>
++<html lang="en">
++  <head>
++    <meta charset="UTF-8" />
++    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+     <title>Pixel Wars</title>
+-    <link rel="stylesheet" href="style.css">
+-</head>
+-<body>
+-
+-<div id="menu">
+-    <input id="name" placeholder="Enter name">
+-    <input id="lobbyId" placeholder="Lobby ID">
+-    <button id="host">Host Lobby</button>
+-    <button id="join">Join Lobby</button>
+-</div>
+-
+-<canvas id="game" width="1000" height="600"></canvas>
+-
+-<script src="/socket.io/socket.io.js"></script>
+-<script src="client.js"></script>
+-</body>
++    <link rel="stylesheet" href="style.css" />
++  </head>
++  <body>
++    <main class="app">
++      <aside class="panel" id="lobbyPanel">
++        <h1>PIXEL WARS</h1>
++        <p class="subtitle">Modern era RTS multiplayer prototype</p>
++
++        <label>
++          Player name
++          <input id="name" placeholder="Commander name" maxlength="20" />
++        </label>
++
++        <div class="row">
++          <button id="host">Host Lobby</button>
++          <button id="join">Join Lobby</button>
++        </div>
++
++        <label>
++          Lobby code
++          <input id="lobbyId" placeholder="Enter lobby code" maxlength="6" />
++        </label>
++
++        <div id="lobbyInfo" class="card hidden"></div>
++
++        <div class="row hidden" id="hostControls">
++          <button id="start">Start Match</button>
++        </div>
++
++        <div class="card hidden" id="assetsCard">
++          <h3>Assets</h3>
++          <p class="hint">Buy first, then place in your territory (except nuke).</p>
++          <div class="assetGrid">
++            <button class="assetBtn" data-buy="tank">Tank<br><small>100R / 50M</small></button>
++            <button class="assetBtn" data-buy="base">Base<br><small>2500R / 1500M</small></button>
++            <button class="assetBtn" data-buy="jet">Jet<br><small>200R / 150M</small></button>
++            <button class="assetBtn" data-buy="bomber">Bomber<br><small>250R / 200M</small></button>
++            <button class="assetBtn" data-buy="battleship">Battleship<br><small>2500R / 1500M</small></button>
++            <button class="assetBtn" data-buy="carrier">Carrier<br><small>2200R / 1400M</small></button>
++            <button class="assetBtn danger" data-buy="nuke">Nuke Strike<br><small>3000R / 1000M</small></button>
++          </div>
++        </div>
++
++        <p id="status" class="status">Create or join a lobby to begin.</p>
++      </aside>
++
++      <section class="boardWrap">
++        <canvas id="game" width="1100" height="640"></canvas>
++      </section>
++    </main>
++
++    <div id="territoryPopup" class="popup hidden">
++      <h3 id="popupTitle">Territory</h3>
++      <p id="popupStats"></p>
++      <div class="row popupActions">
++        <button data-popup-action="claim">Claim/Attack</button>
++        <button data-popup-action="nuke">Nuke This</button>
++      </div>
++      <button id="popupClose" class="closeBtn">Close</button>
++    </div>
++
++    <audio id="sunAudio" src="Assets/sun.mp3" preload="auto"></audio>
++
++    <script src="/socket.io/socket.io.js"></script>
++    <script src="client.js"></script>
++  </body>
+ </html>
+ 
+EOF
+)
