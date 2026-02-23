@@ -47,25 +47,20 @@ canvas.onclick = e => {
     });
 };
 
-function render() {
-    ctx.clearRect(0,0,canvas.width,canvas.height);
+function drawTerritory(t) {
+    ctx.beginPath();
+    ctx.moveTo(t.polygon[0].x, t.polygon[0].y);
 
-    if (!gameState) return;
+    for (let i = 1; i < t.polygon.length; i++) {
+        ctx.lineTo(t.polygon[i].x, t.polygon[i].y);
+    }
 
-    Object.values(gameState.territories).forEach(t => {
-        ctx.beginPath();
-        ctx.arc(t.center.x, t.center.y, 20, 0, Math.PI*2);
+    ctx.closePath();
 
-        if (!t.owner) ctx.fillStyle = "yellow";
-        else ctx.fillStyle = "red";
+    if (!t.owner) ctx.fillStyle = "#d9c76e";
+    else ctx.fillStyle = getPlayerColor(t.owner);
 
-        ctx.fill();
-    });
-
-    gameState.explosions.forEach(exp => {
-        ctx.beginPath();
-        ctx.arc(exp.x, exp.y, exp.radius, 0, Math.PI*2);
-        ctx.fillStyle = "orange";
-        ctx.fill();
-    });
+    ctx.fill();
+    ctx.strokeStyle = "black";
+    ctx.stroke();
 }
