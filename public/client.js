@@ -36,8 +36,35 @@ socket.on("joinedLobby", id => {
 
 socket.on("gameState", state => {
     gameState = state;
-    render();
+    render(// DRAW AIR UNITS
+gameState.airUnits.forEach(unit => {
+
+    ctx.save();
+    ctx.translate(unit.x, unit.y);
+    ctx.scale(unit.scale, unit.scale);
+
+    if (unit.type === "bomber")
+        ctx.drawImage(bomberImg, -20, -20, 40, 40);
+
+    ctx.restore();
 });
+
+// DRAW BOMBS
+gameState.bombs?.forEach(bomb => {
+    ctx.drawImage(nukeImg, bomb.x - 10, bomb.y - 20, 20, 40);
+});
+
+// DRAW EXPLOSIONS
+gameState.explosions.forEach(exp => {
+    ctx.drawImage(
+        explosionImg,
+        exp.x - exp.radius/2,
+        exp.y - exp.radius/2,
+        exp.radius,
+        exp.radius
+    );
+});
+
 
 canvas.onclick = e => {
     if (!gameState) return;
