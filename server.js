@@ -16,23 +16,69 @@ const lobbies = {};
 ============================= */
 
 function generateMap() {
-    const territories = {};
-    const size = 50;
+    const width = 1000;
+    const height = 600;
+    const count = 50;
 
-    for (let i = 0; i < size; i++) {
-        territories[i] = {
+    const points = [];
+    const territories = {};
+
+    // Generate random points
+    for (let i = 0; i < count; i++) {
+        points.push({
             id: i,
+            x: Math.random() * width,
+            y: Math.random() * height
+        });
+    }
+
+    // Create territories
+    points.forEach(p => {
+        territories[p.id] = {
+            id: p.id,
             owner: null,
             resources: Math.floor(Math.random() * 10) + 1,
             economy: Math.floor(Math.random() * 100),
             bases: 0,
-            center: {
-                x: Math.random() * 1000,
-                y: Math.random() * 600
-            },
+            center: { x: p.x, y: p.y },
+            polygon: [],
             neighbors: []
         };
+    });
+
+    // Assign polygon vertices (fake Voronoi style radial blob)
+    points.forEach(p => {
+        const verts = [];
+        const sides = 6 + Math.floor(Math.random() * 4);
+        const radius = 60 + Math.random() * 40;
+
+        for (let i = 0; i < sides; i++) {
+            const angle = (Math.PI * 2 / sides) * i;
+            verts.push({
+                x: p.x + Math.cos(angle) * radius,
+                y: p.y + Math.sin(angle) * radius
+            });
+        }
+
+        territories[p.id].polygon = verts;
+    });
+
+    // Neighbor detection (close centers)
+    for (let i = 0; i < count; i++) {
+        for (let j = i + 1; j < count; j++) {
+            const dx = points[i].x - points[j].x;
+            const dy = points[i].y - points[j].y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+
+            if (dist < 150) {
+                territories[i].neighbors.push(j);
+                territories[j].neighbors.push(i);
+            }
+        }
     }
+
+    return territories;
+}
 
     // simple neighbor linking
     for (let i = 0; i < size; i++) {
