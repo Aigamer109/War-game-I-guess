@@ -64,3 +64,11 @@ function drawTerritory(t) {
     ctx.strokeStyle = "black";
     ctx.stroke();
 }
+function getPlayerColor(id) {
+    const colors = ["#e74c3c", "#3498db", "#2ecc71", "#9b59b6"];
+    const index = Object.keys(gameState.players).indexOf(id);
+    return colors[index % colors.length];
+}
+Object.values(gameState.territories).forEach(t => {
+    drawTerritory(t);
+});
