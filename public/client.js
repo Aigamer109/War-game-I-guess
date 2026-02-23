@@ -5,6 +5,15 @@ const ctx = canvas.getContext("2d");
 let lobbyId = null;
 let gameState = null;
 
+const bomberImg = new Image();
+bomberImg.src = "Assets/BOMBER.png";
+
+const nukeImg = new Image();
+nukeImg.src = "Assets/NUKE.png";
+
+const explosionImg = new Image();
+explosionImg.src = "Assets/NUKE_EXPLOSION.png";
+
 document.getElementById("host").onclick = () => {
     const name = document.getElementById("name").value;
     socket.emit("hostLobby", name);
