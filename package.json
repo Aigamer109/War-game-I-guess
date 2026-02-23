@@ -1,13 +1,13 @@
 {
-  "name": "world-strategy-game",
+  "name": "pixel-wars",
   "version": "1.0.0",
-  "description": "Multiplayer grand strategy game",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
     "express": "^4.18.2",
-    "socket.io": "^4.7.2"
+    "socket.io": "^4.7.2",
+    "uuid": "^9.0.1"
   }
 }
