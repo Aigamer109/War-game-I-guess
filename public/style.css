@@ -1,15 +1,176 @@
-body {
-    margin: 0;
-    background: #1e3f66;
-    font-family: Arial;
-}
-
-#menu {
-    position: absolute;
-    top: 20px;
-    left: 20px;
-}
-
-canvas {
-    display: block;
-}
+ (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
+diff --git a/public/style.css b/public/style.css
+index 2afa0bf23abd6a49358dd2134f0e1fcd08488501..7ca8dd56e28062be35c609f0f6a013f49f164f2e 100644
+--- a/public/style.css
++++ b/public/style.css
+@@ -1,15 +1,158 @@
++:root {
++  --bg: #0f4c81;
++  --text: #f7f7f7;
++  --accent: #4caf50;
++}
++
++* { box-sizing: border-box; }
++
+ body {
+-    margin: 0;
+-    background: #1e3f66;
+-    font-family: Arial;
++  margin: 0;
++  min-height: 100vh;
++  font-family: Arial, Helvetica, sans-serif;
++  color: var(--text);
++  background: radial-gradient(circle at top, #1d5f98 0%, var(--bg) 65%);
++}
++
++.app {
++  display: grid;
++  grid-template-columns: 360px 1fr;
++  min-height: 100vh;
++}
++
++.panel {
++  background: rgba(8, 28, 48, 0.88);
++  border-right: 2px solid #2d5f88;
++  padding: 20px;
++  display: flex;
++  flex-direction: column;
++  gap: 12px;
++}
++
++h1 { margin: 0; font-size: 2.3rem; letter-spacing: 1px; }
++.subtitle { margin: 0 0 8px; color: #b8d5ee; }
++
++label {
++  display: flex;
++  flex-direction: column;
++  gap: 6px;
++  font-weight: 600;
++}
++
++input {
++  border: none;
++  border-radius: 8px;
++  padding: 10px;
++  font-size: 1rem;
++}
++
++button {
++  border: 2px solid #0b1c2a;
++  background: var(--accent);
++  color: #0f170f;
++  font-weight: 700;
++  border-radius: 999px;
++  padding: 10px 14px;
++  cursor: pointer;
++}
++
++button:hover { filter: brightness(1.05); }
++
++.row {
++  display: flex;
++  gap: 10px;
++  flex-wrap: wrap;
++}
++
++.boardWrap {
++  display: flex;
++  align-items: center;
++  justify-content: center;
++  padding: 18px;
++}
++
++#game {
++  border: 2px solid #0b1c2a;
++  border-radius: 10px;
++  width: min(1100px, 100%);
++  height: auto;
++  background: #155a93;
++}
++
++.card {
++  background: rgba(255, 255, 255, 0.12);
++  border: 1px solid rgba(255, 255, 255, 0.2);
++  border-radius: 12px;
++  padding: 12px;
++}
++
++.card h3 { margin: 0 0 10px; }
++
++.hint { margin: 8px 0 0; color: #d9ebfa; font-size: 0.9rem; }
++
++.assetGrid {
++  display: grid;
++  grid-template-columns: 1fr 1fr;
++  gap: 8px;
++  margin-top: 10px;
++}
++
++.assetBtn {
++  border-radius: 10px;
++  padding: 10px;
++  text-align: center;
++  line-height: 1.2;
++  animation: pulse 1.6s ease-in-out infinite;
++}
++
++.assetBtn:nth-child(odd) { animation-delay: .15s; }
++.assetBtn:nth-child(even) { animation-delay: .45s; }
++
++.assetBtn small {
++  font-weight: 600;
++  color: #0b2d10;
++}
++
++.assetBtn.selected {
++  outline: 3px solid #fff;
++  background: #7ce088;
++}
++
++.assetBtn.danger {
++  background: #ef5350;
++  color: #fff;
++}
++
++.status {
++  margin-top: auto;
++  background: #0c243a;
++  border-radius: 10px;
++  padding: 10px;
++  border: 1px solid #295172;
+ }
+ 
+-#menu {
+-    position: absolute;
+-    top: 20px;
+-    left: 20px;
++.popup {
++  position: fixed;
++  left: 50%;
++  top: 50%;
++  transform: translate(-50%, -50%);
++  background: #0b2841;
++  border: 2px solid #7fb3dd;
++  border-radius: 12px;
++  padding: 14px;
++  width: min(520px, 92vw);
++  z-index: 10;
++  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+ }
+ 
+-canvas {
+-    display: block;
++.popup h3 { margin: 0 0 8px; }
++.popup p { margin: 0 0 10px; color: #d9ebfa; }
++.popupActions button { flex: 1; min-width: 130px; }
++.closeBtn { margin-top: 10px; background: #cbd5e1; }
++
++.hidden { display: none; }
++
++@keyframes pulse {
++  0%, 100% { transform: translateY(0px) scale(1); }
++  50% { transform: translateY(-2px) scale(1.02); }
+ }
+ 
+EOF
+)
